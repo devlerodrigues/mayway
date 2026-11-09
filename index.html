@@ -79,6 +79,10 @@ textarea{min-height:70px;resize:vertical}
 .st-enviada{background:var(--warn-bg);color:var(--warn)}
 .st-nota_emitida{background:var(--info-bg);color:var(--info)}
 .st-pago_cliente{background:var(--violet-bg);color:var(--violet)}
+.st-favorecidos_pagos{background:var(--brand-2);color:var(--brand)}
+.pixbox{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:6px 0 10px}
+.pixqr{width:200px;height:200px;background:#fff;border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center}
+.pixqr svg{width:100%;height:100%}
 .st-concluida{background:var(--ok-bg);color:var(--ok)}
 .st-cancelada{background:#f2f4f7;color:var(--muted)}
 .muted{color:var(--muted)} .small{font-size:12px}
@@ -254,11 +258,13 @@ const SUPABASE_KEY = 'sb_publishable_Q7oyyHqZZLSwC_Ah_UP_6A_EDaUirXy';
 const BUCKET = 'premiacao';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const HST = {enviada:'Ordem enviada', nota_emitida:'Cobrança enviada', pago_cliente:'Cliente pagou a cobrança', favorecidos_pagos:'Favorecidos pagos', concluida:'NFS-e emitida · concluída', cancelada:'Cancelada'};
 const ST = {
-  enviada:      {l:'Aguardando nota', c:'Aguardando sua nota', step:1},
-  nota_emitida: {l:'Aguardando pagamento do cliente', c:'Pagar a nota', step:2},
-  pago_cliente: {l:'Pagar favorecido', c:'Nota paga · aguardando repasse', step:3},
-  concluida:    {l:'Concluída', c:'Concluída', step:4},
+  enviada:      {l:'Enviar cobrança', c:'Aguardando cobrança', step:1},
+  nota_emitida: {l:'Aguardando pagamento do cliente', c:'Pagar cobrança (PIX)', step:2},
+  pago_cliente: {l:'Pagar favorecidos', c:'Pago · pagando favorecidos', step:3},
+  favorecidos_pagos: {l:'Emitir NFS-e', c:'Favorecidos pagos · aguardando NF', step:4},
+  concluida:    {l:'Concluída', c:'Concluída', step:5},
   cancelada:    {l:'Cancelada', c:'Cancelada', step:0},
 };
 const S = { user:null, papel:null, clienteId:null, cliente:null, clientes:[], ordens:[], favs:[], custoTed:9, favCli:'', tab:null, filtro:{status:'acao', cliente:'', q:''} };
@@ -398,19 +404,19 @@ function vPainel(){
   const now=new Date(), ini=new Date(now.getFullYear(),now.getMonth(),1);
   const conc = S.ordens.filter(o=>o.status==='concluida');
   const mes = conc.filter(o=>new Date(o.concluida_em)>=ini);
-  const pipe = S.ordens.filter(o=>['enviada','nota_emitida','pago_cliente'].includes(o.status));
+  const pipe = S.ordens.filter(o=>['enviada','nota_emitida','pago_cliente','favorecidos_pagos'].includes(o.status));
   const cnt = s => S.ordens.filter(o=>o.status===s).length;
   const fatMes = mes.reduce((a,o)=>a+Number(o.valor_taxa),0);
   const fatPipe = pipe.reduce((a,o)=>a+Number(o.valor_taxa),0);
   const volMes = mes.reduce((a,o)=>a+Number(o.valor_pagamento),0);
-  const acao = S.ordens.filter(o=>['enviada','pago_cliente'].includes(o.status));
+  const acao = S.ordens.filter(o=>['enviada','pago_cliente','favorecidos_pagos'].includes(o.status));
   $('#main').innerHTML = `
     <div class="toolbar"><h1 style="margin:0">Painel</h1><div class="spacer"></div><button class="btn sm" onclick="recarregar()">Atualizar</button></div>
     <div class="grid kpis">
       <div class="card kpi"><div class="l">Faturamento do mês</div><div class="v">${brl(fatMes)}</div><div class="s">${mes.length} ordens concluídas</div></div>
       <div class="card kpi"><div class="l">Faturamento em andamento</div><div class="v">${brl(fatPipe)}</div><div class="s">${pipe.length} ordens abertas</div></div>
       <div class="card kpi"><div class="l">Volume pago no mês</div><div class="v">${brl(volMes)}</div><div class="s">repassado aos favorecidos</div></div>
-      <div class="card kpi"><div class="l">Precisam de você</div><div class="v">${acao.length + S.camps.filter(c=>c.status==='em_analise').length}</div><div class="s">${cnt('enviada')} emitir nota · ${cnt('pago_cliente')} pagar · ${S.camps.filter(c=>c.status==='em_analise').length} campanha(s) p/ aprovar</div></div>
+      <div class="card kpi"><div class="l">Precisam de você</div><div class="v">${acao.length + S.camps.filter(c=>c.status==='em_analise').length}</div><div class="s">${cnt('enviada')} cobrar · ${cnt('pago_cliente')} pagar · ${cnt('favorecidos_pagos')} emitir NF · ${S.camps.filter(c=>c.status==='em_analise').length} campanha(s) p/ aprovar</div></div>
     </div>
     <div class="card"><h2>Fila de ação</h2>${tabelaOrdens(acao, true)}</div>`;
   ligarLinhas();
@@ -420,7 +426,7 @@ function vPainel(){
 function vOrdens(){
   const f=S.filtro;
   let lista = S.ordens.filter(o=>{
-    if(f.status==='acao' && !['enviada','pago_cliente'].includes(o.status)) return false;
+    if(f.status==='acao' && !['enviada','pago_cliente','favorecidos_pagos'].includes(o.status)) return false;
     if(f.status && f.status!=='acao' && o.status!==f.status) return false;
     if(f.cliente && o.cliente_id!==f.cliente) return false;
     if(f.q){ const t=(o.descricao+' '+o.favorecido_nome+' '+o.numero+' '+(o.numero_nota||'')+' '+(o.prem_clientes?.nome||'')).toLowerCase(); if(!t.includes(f.q.toLowerCase())) return false; }
@@ -464,46 +470,79 @@ async function detalhe(id){
   const [{ data:hist }, { data:itens }] = await Promise.all([
     sb.from('prem_historico').select('*').eq('ordem_id',id).order('id'),
     sb.from('prem_ordem_itens').select('*').eq('ordem_id',id).order('created_at') ]);
-  const tabItens = (itens&&itens.length) ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>CPF</th><th>Forma / dados</th><th class="num">Valor</th></tr></thead><tbody>
-    ${itens.map(i=>`<tr><td><b>${esc(i.nome)}</b></td><td>${esc(fmtDoc(i.cpf))}</td><td class="small">${esc(i.dados_pagamento)}${Number(i.custo_transferencia)?` <span class="muted">(+${brl(i.custo_transferencia)} TED)</span>`:''}</td><td class="num">${brl(i.valor)}</td></tr>`).join('')}
+  const temPg = (itens||[]).some(i=>i.pago_em);
+  const tabItens = (itens&&itens.length) ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>CPF</th><th>Forma / dados</th><th class="num">Valor</th>${temPg?'<th>Pago em</th>':''}</tr></thead><tbody>
+    ${itens.map(i=>`<tr><td><b>${esc(i.nome)}</b></td><td>${esc(fmtDoc(i.cpf))}</td><td class="small">${esc(i.dados_pagamento)}${Number(i.custo_transferencia)?` <span class="muted">(+${brl(i.custo_transferencia)} TED)</span>`:''}</td><td class="num">${brl(i.valor)}</td>${temPg?`<td>${i.pago_em?dIso(i.pago_em):'—'}</td>`:''}</tr>`).join('')}
     </tbody></table></div>` : `<p>${esc(o.favorecido_nome||'—')} <span class="muted">${esc(o.dados_pagamento||'')}</span></p>`;
-  const arq = [['anexo_ordem','Ordem / boleto'],['anexo_nota','Nota fiscal'],['anexo_comprovante_cliente','Comprovante do cliente'],['anexo_comprovante_pagamento','Comprovante do repasse']]
+  const arq = [['anexo_ordem','Ordem'],['anexo_comprovante_cliente','Comprovante do cliente'],['anexo_comprovante_pagamento','Comprovantes dos pagamentos'],['anexo_nota','NFS-e']]
     .filter(([k])=>o[k]).map(([k,l])=>`<button class="btn sm" data-file="${esc(o[k])}">📎 ${l}</button>`).join('') || '<span class="muted small">Nenhum anexo ainda.</span>';
   const step = ST[o.status].step;
+  const precisaCfg = ['enviada','nota_emitida','pago_cliente','favorecidos_pagos'].includes(o.status);
+  const cfg = precisaCfg ? await cfgEmpresa() : {};
+  const cliNome = o.prem_clientes?.nome || S.cliente?.nome || '';
+  const descRep = textoRepasse(cfg, o, cliNome);
   let acao = '';
-  if(admin && o.status==='enviada') acao = `<div class="action"><h2>Emitir nota para o cliente</h2>
-      <div class="row"><div class="f"><label>Nº da nota</label><input id="aNum"></div>
-      <div class="f"><label>Taxa desta ordem (%)</label><input id="aTaxa" value="${String(o.taxa_percentual).replace('.',',')}"></div></div>
+  // 1) admin envia a cobrança
+  if(admin && o.status==='enviada') acao = `<div class="action"><h2>Enviar cobrança ao cliente</h2>
+      <div class="row"><div class="f"><label>Taxa desta ordem (%)</label><input id="aTaxa" value="${String(o.taxa_percentual).replace('.',',')}"></div><div class="f"></div></div>
       <div class="calc" id="aCalc"></div>
-      <div class="nfse-box"><div class="toolbar" style="margin:0 0 8px"><b>Dados para a NFS-e</b><div class="spacer"></div><button type="button" class="btn sm" id="nfCopiar">Copiar discriminação</button></div>
-        <table class="tbl nfse-tab"><tbody id="nfValores"></tbody></table>
-        <label style="margin-top:10px">Discriminação dos serviços</label><textarea id="nfTexto" readonly style="min-height:230px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
-        <p class="small muted" style="margin:6px 0 0">Na NFS-e: valor do serviço = total; deduções = repasse + transferência; base de cálculo do ISS = taxa. Guarde os comprovantes de pagamento aos favorecidos (ficam na ordem) para comprovar o repasse.</p></div>
-      <div class="f"><label>Arquivo da nota (PDF)</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
-      <button class="btn pri" id="aBtn">Enviar nota ao cliente</button></div>`;
-  if(!admin && o.status==='nota_emitida') acao = `<div class="action"><h2>Pague a nota e envie o comprovante</h2>
-      <p class="muted" style="margin-top:0">Valor da nota: <b>${brl(o.valor_nota)}</b>. Baixe a nota acima, faça o pagamento e anexe o comprovante.</p>
-      <div class="f"><label>Comprovante de pagamento</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
+      ${cfg.contratada_pix?`<p class="small muted" style="margin:8px 0">O cliente vai receber a chave PIX <b>${esc(cfg.contratada_pix)}</b> e um QR Code com o valor exato. A NFS-e só é emitida depois que os favorecidos forem pagos.</p>`
+        :`<p class="small" style="margin:8px 0;color:var(--bad)">Cadastre a chave PIX da Mayway em <b>Contrato › Dados da nossa empresa</b> antes de enviar a cobrança.</p>`}
+      <button class="btn pri" id="aBtn" ${cfg.contratada_pix?'':'disabled'}>Enviar cobrança</button></div>`;
+  // 2) cliente paga por PIX
+  if(!admin && o.status==='nota_emitida') acao = `<div class="action"><h2>Pague por PIX e envie o comprovante</h2>
+      <div class="pixbox"><div id="pixQr" class="pixqr"></div>
+        <div style="flex:1;min-width:220px"><div class="muted small">Valor</div><div style="font-size:26px;font-weight:700;margin-bottom:6px">${brl(o.valor_nota)}</div>
+          <div class="muted small">Favorecido</div><div style="margin-bottom:6px"><b>${esc(cfg.contratada_razao||'Mayway Soluções')}</b>${cfg.contratada_cnpj?` · CNPJ ${esc(cfg.contratada_cnpj)}`:''}</div>
+          <div class="muted small">Chave PIX</div><div style="margin-bottom:8px"><b>${esc(cfg.contratada_pix||'—')}</b> <button type="button" class="btn sm" id="pixChave">Copiar chave</button></div>
+          <button type="button" class="btn sm" id="pixCola">Copiar PIX copia e cola</button></div></div>
+      <p class="small muted">Valor = premiações ${brl(o.valor_pagamento)} + taxa ${brl(o.valor_taxa)}${Number(o.custo_transferencia)?` + TED ${brl(o.custo_transferencia)}`:''}. Depois do pagamento a gente paga os favorecidos em seu nome e emite a nota fiscal.</p>
+      <div class="f"><label>Comprovante do PIX</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
       <button class="btn pri" id="aBtn">Enviar comprovante</button></div>`;
-  if(admin && o.status==='nota_emitida') acao = `<div class="action"><p class="muted" style="margin:0 0 10px">Aguardando o cliente pagar a nota. Se ele te mandou o comprovante por fora, você pode anexar aqui.</p>
+  if(admin && o.status==='nota_emitida') acao = `<div class="action"><p class="muted" style="margin:0 0 10px">Cobrança de <b>${brl(o.valor_nota)}</b> enviada. Aguardando o cliente pagar. Se ele te mandou o comprovante por fora, você pode anexar aqui.</p>
       <input id="aFile" type="file" accept=".pdf,image/*" style="margin-bottom:10px"><button class="btn" id="aBtn">Anexar comprovante do cliente</button></div>`;
+  // 3) admin paga cada favorecido "por conta e ordem"
+  const its = itens||[];
   if(admin && o.status==='pago_cliente') acao = `<div class="action"><h2>Pagar os favorecidos</h2>
-      <p class="muted" style="margin-top:0">Faça os pagamentos da lista acima (total <b>${brl(o.valor_pagamento)}</b>) e anexe o(s) comprovante(s) em um único arquivo.</p>
-      <div class="f"><label>Comprovante do pagamento</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
-      <button class="btn pri" id="aBtn">Concluir ordem</button></div>`;
-  const podeCancelar = o.status!=='concluida' && o.status!=='cancelada' && (admin || o.status==='enviada');
+      <p class="muted" style="margin-top:0">Use a descrição abaixo em cada PIX/TED. Ela deixa registrado que o pagamento é feito <b>por conta e ordem</b> do cliente.</p>
+      <div class="f"><label>Descrição do pagamento</label><div style="display:flex;gap:8px"><input id="pDesc" value="${esc(descRep)}" readonly><button type="button" class="btn sm" id="pDescCp">Copiar</button></div></div>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>Dados</th><th class="num">Valor</th><th>Pago em</th><th>ID / E2E (opcional)</th></tr></thead><tbody>
+      ${its.map(i=>`<tr data-item="${i.id}"><td><b>${esc(i.nome)}</b><div class="small muted">CPF ${esc(fmtDoc(i.cpf))}</div></td>
+        <td class="small">${esc(i.dados_pagamento)} <button type="button" class="btn sm" data-cp="${esc(i.dados_pagamento)}">Copiar</button></td>
+        <td class="num">${brl(i.valor)} <button type="button" class="btn sm" data-cp="${Number(i.valor).toFixed(2).replace('.',',')}">Copiar</button></td>
+        <td><input type="date" class="pData" value="${i.pago_em||hojeIso()}" style="min-width:140px"></td>
+        <td><input class="pRef" value="${esc(i.pago_ref||'')}" placeholder="E2E…"></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="f" style="margin-top:10px"><label>Comprovantes dos pagamentos (um PDF com todos)</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
+      <button class="btn pri" id="aBtn">Registrar pagamentos</button></div>`;
+  if(!admin && o.status==='pago_cliente') acao = `<div class="action"><p class="muted" style="margin:0">Pagamento recebido. Estamos pagando os favorecidos em seu nome; os comprovantes aparecem aqui assim que terminarmos.</p></div>`;
+  // 4) admin emite a NFS-e com as deduções
+  if(admin && o.status==='favorecidos_pagos') acao = `<div class="action"><h2>Emitir a NFS-e</h2>
+      <div class="nfse-box"><div class="toolbar" style="margin:0 0 8px"><b>Dados para a NFS-e (Emissor Nacional)</b><div class="spacer"></div><button type="button" class="btn sm" id="nfCopiar">Copiar discriminação</button></div>
+        <table class="tbl nfse-tab"><tbody id="nfValores"></tbody></table>
+        <label style="margin-top:10px">Deduções – documentos (um por favorecido)</label>
+        <div class="tblwrap"><table class="tbl"><thead><tr><th>Tipo</th><th>CPF</th><th>Nome</th><th>Data</th><th class="num">Valor</th></tr></thead><tbody>
+        ${its.map(i=>`<tr><td class="small">99 – Outras deduções (repasse)</td><td>${esc(fmtDoc(i.cpf))}</td><td>${esc(i.nome)}</td><td>${dIso(i.pago_em)}</td><td class="num">${brl(i.valor)}</td></tr>`).join('')}
+        ${Number(o.custo_transferencia)?`<tr><td class="small">99 – Outras deduções (tarifa TED)</td><td>—</td><td>Custo de transferência</td><td>—</td><td class="num">${brl(o.custo_transferencia)}</td></tr>`:''}
+        </tbody></table></div>
+        <label style="margin-top:10px">Discriminação dos serviços</label><textarea id="nfTexto" readonly style="min-height:260px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
+        <p class="small muted" style="margin:6px 0 0">Código 17.06.01 · NBS 1.1406.19.00. Valor do serviço = total; deduções = repasses + TED (por documentos); base de cálculo do ISS = taxa.</p></div>
+      <div class="row"><div class="f"><label>Nº da NFS-e</label><input id="aNum"></div><div class="f"><label>PDF da NFS-e</label><input id="aFile" type="file" accept=".pdf,image/*"></div></div>
+      <button class="btn pri" id="aBtn">Enviar NFS-e e concluir</button></div>`;
+  if(!admin && o.status==='favorecidos_pagos') acao = `<div class="action"><p class="muted" style="margin:0">Todos os favorecidos foram pagos (comprovantes acima). A nota fiscal será emitida em seguida.</p></div>`;
+  const podeCancelar = !['concluida','cancelada','favorecidos_pagos'].includes(o.status) && (admin || o.status==='enviada');
   abrirModal(`
     <div class="muted small">Ordem #${o.numero} · ${dth(o.created_at)}</div>
     <h1 style="margin:4px 0 6px">${esc(o.descricao)}</h1>${o.prem_campanhas?`<div class="muted" style="margin-bottom:6px">Campanha: <b>${esc(o.prem_campanhas.nome)}</b></div>`:''}
     <div>${pill(o.status, !admin)}</div>
-    ${step?`<div class="steps">${[1,2,3,4].map(i=>`<div class="${i<=step?'on':''}"></div>`).join('')}</div>`:'<div style="height:14px"></div>'}
+    ${step?`<div class="steps">${[1,2,3,4,5].map(i=>`<div class="${i<=step?'on':''}"></div>`).join('')}</div>`:'<div style="height:14px"></div>'}
     <dl class="dl">
       ${admin?`<dt>Cliente</dt><dd>${esc(o.prem_clientes?.nome)}</dd>`:''}
       <dt>Vencimento</dt><dd>${dIso(o.vencimento)}</dd>
       <dt>Total dos pagamentos</dt><dd>${brl(o.valor_pagamento)}</dd>
       <dt>${admin?'Sua taxa':'Taxa de serviço'}</dt><dd>${brl(o.valor_taxa)} <span class="muted">(${pct(o.taxa_percentual)})</span></dd>
       ${Number(o.custo_transferencia)?`<dt>Custo de TED</dt><dd>${brl(o.custo_transferencia)}</dd>`:''}
-      <dt>Valor da nota</dt><dd><b>${brl(o.valor_nota)}</b>${o.numero_nota?` <span class="muted">· NF ${esc(o.numero_nota)}</span>`:''}</dd>
+      <dt>Valor total (cobrança)</dt><dd><b>${brl(o.valor_nota)}</b>${o.numero_nota?` <span class="muted">· NFS-e ${esc(o.numero_nota)}</span>`:''}</dd>
       ${o.observacao?`<dt>Observação</dt><dd style="white-space:pre-wrap">${esc(o.observacao)}</dd>`:''}
       ${o.motivo_cancelamento?`<dt>Motivo do cancelamento</dt><dd>${esc(o.motivo_cancelamento)}</dd>`:''}
     </dl>
@@ -511,27 +550,25 @@ async function detalhe(id){
     <h2>Arquivos</h2><div class="files">${arq}</div>
     ${acao}
     <h2 style="margin-top:20px">Histórico</h2>
-    <ul class="tl">${(hist||[]).map(h=>`<li><span>${esc(ST[h.status].l)}${h.observacao?' — '+esc(h.observacao):''}</span><span class="muted">${dth(h.created_at)}</span></li>`).join('')}</ul>
+    <ul class="tl">${(hist||[]).map(h=>`<li><span>${esc(HST[h.status]||h.status)}${h.observacao?' — '+esc(h.observacao):''}</span><span class="muted">${dth(h.created_at)}</span></li>`).join('')}</ul>
     ${podeCancelar?`<div style="margin-top:18px;display:flex;gap:8px;align-items:center"><input id="cMot" placeholder="Motivo do cancelamento" style="max-width:320px"><button class="btn danger sm" id="cBtn">Cancelar ordem</button></div>`:''}
   `);
   document.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
+  document.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copiar(b.dataset.cp,'Copiado.'));
   const btn=$('#aBtn');
   if(admin && o.status==='enviada'){
-    const upd=()=>{ const t=parseValor($('#aTaxa').value), tx=Math.round(o.valor_pagamento*t)/100;
-      const ted=Number(o.custo_transferencia||0);
-      $('#aCalc').innerHTML=`<div>Pagamentos<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div>${ted?`<div>Custo TED<b>${brl(ted)}</b></div>`:''}<div>Valor da nota<b>${brl(Number(o.valor_pagamento)+tx+ted)}</b></div>`;
-      const rep_=Number(o.valor_pagamento), tot=rep_+tx+ted, ded=rep_+ted;
-      $('#nfValores').innerHTML=[['Valor total do serviço',tot],['Deduções (repasse + transferência)',ded],['Base de cálculo do ISS (taxa)',tx]].map(([l,v])=>`<tr><td>${l}</td><td class="num"><b>${brl(v)}</b></td></tr>`).join('');
-      $('#nfTexto').value=textoNfse(o, rep_, tx, ted, S.cfgNota); };
-    $('#aTaxa').oninput=upd;
-    if(!S.cfgNota){ const {data}=await sb.from('prem_config').select('contratada_razao,contratada_cnpj,contratada_banco').single(); S.cfgNota=data||{}; }
-    upd();
-    $('#nfCopiar').onclick=async()=>{ try{ await navigator.clipboard.writeText($('#nfTexto').value); toast('Discriminação copiada. Cole no Emissor Nacional.'); }catch(e){ $('#nfTexto').select(); toast('Selecionei o texto: copie com Ctrl+C.',true); } };
+    const upd=()=>{ const t=parseValor($('#aTaxa').value), tx=Math.round(o.valor_pagamento*t)/100, ted=Number(o.custo_transferencia||0);
+      $('#aCalc').innerHTML=`<div>Pagamentos<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div>${ted?`<div>Custo TED<b>${brl(ted)}</b></div>`:''}<div>Valor da cobrança<b>${brl(Number(o.valor_pagamento)+tx+ted)}</b></div>`; };
+    $('#aTaxa').oninput=upd; upd();
     btn.onclick=()=>busy(btn,async()=>{
-      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o arquivo da nota.');
-      const path=await upload(o.cliente_id,o.id,'nota',f);
-      const {error}=await sb.rpc('prem_emitir_nota',{p_ordem:o.id,p_numero_nota:$('#aNum').value.trim()||null,p_anexo:path,p_taxa:parseValor($('#aTaxa').value)});
-      if(error) throw error; toast('Nota enviada ao cliente.'); fecharModal(); recarregar(); });
+      const {error}=await sb.rpc('prem_enviar_cobranca',{p_ordem:o.id,p_taxa:parseValor($('#aTaxa').value)});
+      if(error) throw error; toast('Cobrança enviada ao cliente.'); fecharModal(); recarregar(); });
+  }
+  if(!admin && o.status==='nota_emitida'){
+    const payload = cfg.contratada_pix ? pixPayload({chave:cfg.contratada_pix, nome:cfg.contratada_razao||'Mayway Solucoes', cidade:cfg.contratada_cidade||'Belo Horizonte', valor:o.valor_nota, txid:'ORDEM'+o.numero}) : '';
+    $('#pixChave').onclick=()=>copiar(cfg.contratada_pix||'','Chave PIX copiada.');
+    $('#pixCola').onclick=()=>copiar(payload,'PIX copia e cola copiado. Cole no app do banco.');
+    if(payload) desenharQr($('#pixQr'), payload);
   }
   if(o.status==='nota_emitida' && btn){
     btn.onclick=()=>busy(btn,async()=>{
@@ -541,11 +578,25 @@ async function detalhe(id){
       if(error) throw error; toast('Comprovante enviado.'); fecharModal(); recarregar(); });
   }
   if(admin && o.status==='pago_cliente'){
+    $('#pDescCp').onclick=()=>copiar($('#pDesc').value,'Descrição copiada. Cole no campo "mensagem/descrição" do PIX.');
     btn.onclick=()=>busy(btn,async()=>{
-      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o comprovante do pagamento.');
+      const linhas=[...document.querySelectorAll('tr[data-item]')].map(tr=>({id:tr.dataset.item, pago_em:tr.querySelector('.pData').value||null, pago_ref:tr.querySelector('.pRef').value}));
+      if(linhas.some(l=>!l.pago_em)) throw new Error('Informe a data de pagamento de todos os favorecidos.');
+      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe os comprovantes dos pagamentos.');
       const path=await upload(o.cliente_id,o.id,'pagamento',f);
-      const {error}=await sb.rpc('prem_concluir',{p_ordem:o.id,p_anexo:path});
-      if(error) throw error; toast('Ordem concluída. Faturamento registrado.'); fecharModal(); recarregar(); });
+      const {error}=await sb.rpc('prem_registrar_pagamentos',{p_ordem:o.id,p_anexo:path,p_itens:linhas});
+      if(error) throw error; toast('Pagamentos registrados. Agora emita a NFS-e.'); fecharModal(); recarregar(); });
+  }
+  if(admin && o.status==='favorecidos_pagos'){
+    const rep_=Number(o.valor_pagamento), tx=Number(o.valor_taxa), ted=Number(o.custo_transferencia||0);
+    $('#nfValores').innerHTML=[['Valor total do serviço',rep_+tx+ted],['Deduções (repasses + TED)',rep_+ted],['Base de cálculo do ISS (taxa)',tx]].map(([l,v])=>`<tr><td>${l}</td><td class="num"><b>${brl(v)}</b></td></tr>`).join('');
+    $('#nfTexto').value=textoNfse(o, its, cliNome, cfg);
+    $('#nfCopiar').onclick=()=>copiar($('#nfTexto').value,'Discriminação copiada. Cole no Emissor Nacional.');
+    btn.onclick=()=>busy(btn,async()=>{
+      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o PDF da NFS-e.');
+      const path=await upload(o.cliente_id,o.id,'nota',f);
+      const {error}=await sb.rpc('prem_emitir_nfse',{p_ordem:o.id,p_numero_nota:$('#aNum').value.trim()||null,p_anexo:path});
+      if(error) throw error; toast('NFS-e enviada. Ordem concluída.'); fecharModal(); recarregar(); });
   }
   if(podeCancelar) $('#cBtn').onclick=()=>busy($('#cBtn'),async()=>{
     const m=$('#cMot').value.trim(); if(!m) throw new Error('Informe o motivo do cancelamento.');
@@ -553,16 +604,52 @@ async function detalhe(id){
     toast('Ordem cancelada.'); fecharModal(); recarregar(); });
 }
 
-function textoNfse(o, rep_, tx, ted, cfg){
+// ===== apoio: empresa, texto "por conta e ordem", PIX, QR =====
+const TEXTO_REPASSE_PADRAO = 'Premiação ordem {ORDEM} – por conta e ordem de {CLIENTE}';
+async function cfgEmpresa(){
+  if(!S.cfgNota){ const {data}=await sb.from('prem_config').select('*').single(); S.cfgNota=data||{}; }
+  return S.cfgNota;
+}
+function textoRepasse(cfg, o, cliente){
+  return (cfg.texto_repasse||TEXTO_REPASSE_PADRAO).replace(/\{ORDEM\}/g, o.numero).replace(/\{CLIENTE\}/g, cliente||'')
+    .replace(/\{CAMPANHA\}/g, o.prem_campanhas?.nome||'').slice(0,140);
+}
+function hojeIso(){ const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+async function copiar(t, msg){ try{ await navigator.clipboard.writeText(t); toast(msg||'Copiado.'); }catch(e){ toast('Não consegui copiar automaticamente: selecione e copie.',true); } }
+function crc16(s){ let c=0xFFFF; for(let i=0;i<s.length;i++){ c^=s.charCodeAt(i)<<8; for(let j=0;j<8;j++) c=(c&0x8000)?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF; } return c.toString(16).toUpperCase().padStart(4,'0'); }
+function pixPayload({chave,nome,cidade,valor,txid}){
+  const tlv=(id,v)=>id+String(v.length).padStart(2,'0')+v;
+  const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 ]/g,'').trim().toUpperCase();
+  let k=String(chave||'').trim();
+  if(/^[\d.\-\/ ]+$/.test(k) && [11,14].includes(k.replace(/\D/g,'').length)) k=k.replace(/\D/g,'');   // CPF/CNPJ sem pontuação
+  else if(/^\(?\d{2}\)?[\d \-]{8,11}$/.test(k)) k='+55'+k.replace(/\D/g,'');                             // telefone
+  else if(k.includes('@')) k=k.toLowerCase();
+  const p=tlv('00','01')+tlv('26',tlv('00','br.gov.bcb.pix')+tlv('01',k))+tlv('52','0000')+tlv('53','986')
+    +(Number(valor)>0?tlv('54',Number(valor).toFixed(2)):'')+tlv('58','BR')+tlv('59',norm(nome).slice(0,25)||'MAYWAY')
+    +tlv('60',norm(cidade).slice(0,15)||'BELO HORIZONTE')+tlv('62',tlv('05',String(txid||'***').replace(/[^A-Za-z0-9]/g,'').slice(0,25)||'***'))+'6304';
+  return p+crc16(p);
+}
+let _qrLib;
+function desenharQr(el, texto){
+  _qrLib = _qrLib || new Promise((ok,nok)=>{ if(window.maywayQrSvg) return ok(); const sc=document.createElement('script');
+    sc.src='vendor/qrcode.js'; sc.onload=ok; sc.onerror=nok; document.head.appendChild(sc); });
+  _qrLib.then(()=>{ el.innerHTML=window.maywayQrSvg(texto); })
+    .catch(()=>{ _qrLib=null; el.innerHTML='<div class="small muted" style="padding:10px">Use o “PIX copia e cola”.</div>'; });
+}
+
+function mascCpf(c){ const d=String(c||'').replace(/\D/g,''); return d.length===11?`***.${d.slice(3,6)}.${d.slice(6,9)}-**`:fmtDoc(c); }
+function textoNfse(o, itens, cliente, cfg){
   cfg=cfg||{}; const f=v=>brl(v).replace(/\u00a0/g,' ');
+  const rep_=Number(o.valor_pagamento), tx=Number(o.valor_taxa), ted=Number(o.custo_transferencia||0);
   const linhas=[`Campanha de Incentivo – ${o.prem_campanhas?.nome||''} – Ordem nº ${o.numero}`, `Valor Total: ${f(rep_+tx+ted)}`, 'Sendo:', '',
-    `• Valor do repasse de premiações a terceiros (pagos diretamente aos premiados): ${f(rep_)}`,
-    `• Valor da taxa de administração da campanha: ${f(tx)}`];
+    `• Premiações pagas aos favorecidos em nome e por conta e ordem de ${cliente}: ${f(rep_)}`,
+    `• Taxa de administração da campanha: ${f(tx)}`];
   if(ted) linhas.push(`• Custo de transferência (TED): ${f(ted)}`);
-  linhas.push('', 'Observações:', `- Base de cálculo do ISS: ${f(tx)} (apenas sobre o valor da taxa de administração).`,
-    `- Deduções: ${f(rep_+ted)} referentes a valores repassados a terceiros${ted?' e custos de transferência':''}, que não constituem receita do prestador.`,
-    `- Favorecidos: ${o.qtd_favorecidos||''} pessoa(s), conforme relação e comprovantes vinculados à ordem nº ${o.numero}.`);
-  if(cfg.contratada_banco) linhas.push('', 'Dados para pagamento:', (cfg.contratada_razao||''), cfg.contratada_banco);
+  linhas.push('', 'Pagamentos realizados por conta e ordem do tomador:');
+  (itens||[]).forEach(i=>linhas.push(`- ${i.nome} – CPF ${mascCpf(i.cpf)} – ${dIso(i.pago_em)} – ${f(i.valor)}`));
+  linhas.push('', 'Observações:', `- Base de cálculo do ISS: ${f(tx)} (somente a taxa de administração).`,
+    `- Deduções: ${f(rep_+ted)} – valores repassados a terceiros por conta e ordem do tomador${ted?' e tarifas de transferência':''}, comprovados por documentos, que não constituem receita do prestador.`,
+    `- Serviço já quitado pelo tomador via PIX. Comprovantes vinculados à ordem nº ${o.numero}.`);
   return linhas.join('\n');
 }
 
@@ -960,7 +1047,10 @@ async function vContratoAdmin(){
         <div class="f"><label>Foro (município/UF)</label><input id="cfForo" placeholder="São Paulo/SP" value="${esc(cfg.contrato_foro||'')}"></div></div>
       <div class="f"><label>Endereço completo</label><input id="cfEnd" value="${esc(cfg.contratada_endereco||'')}"></div>
       <div class="f"><label>Representante legal (nome e CPF)</label><input id="cfRep" placeholder="Nome, CPF 000.000.000-00" value="${esc(cfg.contratada_rep||'')}"></div>
-      <div class="f"><label>Dados bancários para pagamento (vão na discriminação da NFS-e)</label><textarea id="cfBanco" placeholder="Banco: 000 - Nome\nAg.: 0000  C/C: 00000-0\nChave PIX (CNPJ): 58.489.885/0001-14" style="min-height:80px">${esc(cfg.contratada_banco||'')}</textarea></div>
+      <div class="row"><div class="f"><label>Chave PIX para receber dos clientes</label><input id="cfPix" placeholder="58.489.885/0001-14" value="${esc(cfg.contratada_pix||'')}"></div>
+        <div class="f"><label>Cidade (vai no QR Code)</label><input id="cfCid" value="${esc(cfg.contratada_cidade||'Belo Horizonte')}"></div></div>
+      <div class="f"><label>Texto dos pagamentos aos favorecidos <span class="muted small">({ORDEM}, {CLIENTE}, {CAMPANHA})</span></label><input id="cfTxt" maxlength="140" value="${esc(cfg.texto_repasse||TEXTO_REPASSE_PADRAO)}"></div>
+      <div class="f"><label>Dados bancários (outros)</label><textarea id="cfBanco" placeholder="Banco: 000 - Nome\nAg.: 0000  C/C: 00000-0" style="min-height:60px">${esc(cfg.contratada_banco||'')}</textarea></div>
       <div class="f"><label style="font-weight:500"><input type="checkbox" id="cfExig" style="width:auto" ${cfg.contrato_exigir?'checked':''}> Exigir assinatura do contrato para os clientes usarem o sistema</label></div>
       <button class="btn pri" id="cfSave">Salvar</button>
       <p class="small muted">Enquanto a exigência estiver desligada, os clientes usam o sistema normalmente. Ligue depois de preencher os dados acima.</p></div>
@@ -971,7 +1061,9 @@ async function vContratoAdmin(){
       <button class="btn sm" id="cfPrev" style="margin-top:12px">Pré-visualizar modelo</button></div></div>`;
   $('#cfSave').onclick=()=>busy($('#cfSave'),async()=>{
     const row={contratada_razao:$('#cfRaz').value.trim()||null, contratada_cnpj:$('#cfCnpj').value.trim()||null, contratada_endereco:$('#cfEnd').value.trim()||null,
-      contratada_rep:$('#cfRep').value.trim()||null, contratada_banco:$('#cfBanco').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked};
+      contratada_rep:$('#cfRep').value.trim()||null, contratada_banco:$('#cfBanco').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked,
+      contratada_pix:$('#cfPix').value.trim()||null};
+    if('contratada_cidade' in cfg){ row.contratada_cidade=$('#cfCid').value.trim()||null; row.texto_repasse=$('#cfTxt').value.trim()||null; }
     if(row.contrato_exigir && (!row.contratada_razao||!row.contratada_cnpj||!row.contratada_endereco||!row.contratada_rep||!row.contrato_foro))
       throw new Error('Preencha todos os dados da empresa antes de exigir a assinatura.');
     const {error}=await sb.from('prem_config').update(row).eq('id',true); if(error) throw error; S.cfgNota=null; toast('Configuração salva.'); });
@@ -1102,8 +1194,8 @@ function vMinhas(){
     <div class="toolbar"><h1 style="margin:0">Olá, ${esc(S.cliente?.nome||'')}</h1><div class="spacer"></div>
       <button class="btn sm" onclick="recarregar()">Atualizar</button><button class="btn pri" onclick="ir('nova')">+ Nova ordem</button></div>
     ${avisoAj}${avisoCamp}${avisoRen}
-    ${pend.length?`<div class="card" style="margin-bottom:16px;border-color:var(--info)"><h2>Você tem ${pend.length} nota(s) para pagar</h2>
-      <p class="muted" style="margin:0">Abra a ordem, baixe a nota, pague e anexe o comprovante para liberarmos o pagamento.</p></div>`:''}
+    ${pend.length?`<div class="card" style="margin-bottom:16px;border-color:var(--info)"><h2>Você tem ${pend.length} cobrança(s) para pagar</h2>
+      <p class="muted" style="margin:0">Abra a ordem, pague pelo PIX (QR Code ou copia e cola) e anexe o comprovante para liberarmos os pagamentos.</p></div>`:''}
     <div class="card">${tabelaOrdens(S.ordens,false)}</div>`;
   ligarLinhas();
 }
