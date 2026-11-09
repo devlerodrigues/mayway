@@ -254,12 +254,14 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['equipe','Equipe']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['contrato','Contrato'],['equipe','Equipe']]);
     await carregar(); ir(S.tab||'painel');
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
     S.cliente = c;
-    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['favorecidos','Favorecidos']]);
+    const { data:cfgc } = await sb.from('prem_config').select('contrato_exigir').single();
+    if(cfgc?.contrato_exigir && !c?.contrato_aceito_em){ $('#who').textContent = S.user.email; vContratoGate(); return; }
+    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['favorecidos','Favorecidos']].concat(c?.contrato_aceito_em?[['contrato','Contrato']]:[]));
     await carregar(); ir(S.tab||'minhas');
   }
 }
@@ -269,7 +271,7 @@ function montarNav(items){
 }
 function ir(tab){
   S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe}[tab])();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='minhas')); verContratoAssinado(S.clienteId); } }}[tab])();
 }
 
 // ================= DADOS =================
@@ -728,6 +730,101 @@ async function vEquipe(){
       <button class="btn danger" id="rmOk">Remover</button> <button class="btn" onclick="fecharModal()">Voltar</button>`);
     $('#rmOk').onclick=()=>busy($('#rmOk'),async()=>{ const {error}=await sb.rpc('prem_remover_admin',{p_email:b.dataset.rm}); if(error) throw error; fecharModal(); toast('Acesso removido.'); vEquipe(); });
   });
+}
+
+// ================= CONTRATO =================
+function mdHtml(t){
+  const inl = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  let out='', inList=false;
+  for(const raw of String(t||'').split('\n')){
+    const l=raw.trimEnd();
+    const li=l.match(/^\d+\.\s+(.*)$/);
+    if(li){ if(!inList){ out+='<ol>'; inList=true; } out+=`<li>${inl(li[1])}</li>`; continue; }
+    if(inList){ out+='</ol>'; inList=false; }
+    if(!l) continue;
+    if(l.startsWith('## ')) out+=`<h3>${inl(l.slice(3))}</h3>`;
+    else if(l.startsWith('# ')) out+=`<h2 style="text-align:center">${inl(l.slice(2))}</h2>`;
+    else out+=`<p>${inl(l)}</p>`;
+  }
+  if(inList) out+='</ol>';
+  return out;
+}
+const CSS_CONTRATO = 'max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:18px 22px;background:#fff;line-height:1.55;font-size:13.5px';
+function vContratoGate(){
+  show('vApp'); $('#nav').innerHTML='';
+  const c=S.cliente||{};
+  $('#main').innerHTML = `<div class="card" style="max-width:900px;margin:0 auto">
+    <h1>Contrato de prestação de serviços</h1>
+    <p class="muted" style="margin-top:0">Para começar a usar o sistema, confira seus dados, leia o contrato e assine eletronicamente. Leva 2 minutos.</p>
+    <div class="row"><div class="f"><label>Empresa</label><input value="${esc(c.nome||'')}" disabled></div><div class="f"><label>CNPJ</label><input value="${esc(c.documento||'')}" disabled></div></div>
+    <div class="f"><label>Endereço completo da empresa (rua, nº, bairro, cidade/UF, CEP)</label><input id="ctEnd" value="${esc(c.endereco||'')}"></div>
+    <div class="row"><div class="f"><label>Nome do representante legal</label><input id="ctRep" value="${esc(c.rep_nome||'')}"></div>
+      <div class="f"><label>CPF do representante</label><input id="ctCpf" inputmode="numeric" value="${esc(fmtDoc(c.rep_cpf||''))}"></div></div>
+    <button class="btn" id="ctPrev">Gerar contrato com meus dados</button>
+    <div id="ctBox" style="margin-top:16px"></div>
+    <p class="small muted" style="margin-top:14px">Dados incorretos de empresa ou CNPJ? Fale com a gente antes de assinar. <button class="link" onclick="sair()">Sair</button></p>
+  </div>`;
+  const dados=()=>{ const rep=$('#ctRep').value.trim(), cpf=soDig($('#ctCpf').value), end=$('#ctEnd').value.trim();
+    if(!end) throw new Error('Informe o endereço da empresa.'); if(!rep) throw new Error('Informe o nome do representante legal.');
+    if(!cpfValido(cpf)) throw new Error('CPF do representante inválido.'); return {rep,cpf,end}; };
+  $('#ctPrev').onclick=()=>busy($('#ctPrev'),async()=>{
+    const d=dados();
+    const {data,error}=await sb.rpc('prem_contrato_render',{p_cliente:S.clienteId,p_rep_nome:d.rep,p_rep_cpf:fmtDoc(d.cpf),p_endereco:d.end});
+    if(error) throw error;
+    $('#ctBox').innerHTML=`<div style="${CSS_CONTRATO}">${mdHtml(data.texto)}</div>
+      <div class="f" style="margin-top:14px"><label style="font-weight:500"><input type="checkbox" id="ctOk" style="width:auto"> Li o contrato acima e, como representante legal de ${esc(c.nome||'')}, concordo com todas as cláusulas.</label></div>
+      <button class="btn pri" id="ctSign">Assinar eletronicamente</button>
+      <p class="small muted">Ficam registrados data, hora, seu e-mail de acesso e uma impressão digital (hash SHA-256) do texto assinado.</p>`;
+    $('#ctSign').onclick=()=>busy($('#ctSign'),async()=>{
+      if(!$('#ctOk').checked) throw new Error('Marque que leu e concorda com o contrato.');
+      const d2=dados();
+      const {error}=await sb.rpc('prem_aceitar_contrato',{p_rep_nome:d2.rep,p_rep_cpf:fmtDoc(d2.cpf),p_endereco:d2.end,p_user_agent:navigator.userAgent});
+      if(error) throw error; toast('Contrato assinado! Bem-vindo.'); S.tab=null; iniciar();
+    });
+  });
+}
+async function verContratoAssinado(clienteId){
+  const {data,error}=await sb.from('prem_contrato_aceites').select('*').eq('cliente_id',clienteId).order('aceito_em',{ascending:false}).limit(1);
+  if(error) return toast(error.message,true);
+  const a=data&&data[0]; if(!a) return toast('Este cliente ainda não assinou o contrato.',true);
+  abrirModal(`<h1 style="margin-bottom:4px">Contrato assinado</h1>
+    <p class="muted small" style="margin-top:0">Versão ${a.versao} · assinado em ${dth(a.aceito_em)} por ${esc(a.rep_nome)} (CPF ${esc(fmtDoc(a.rep_cpf))}) · login ${esc(a.email)}<br>Hash SHA-256: <code style="word-break:break-all">${esc(a.hash_sha256)}</code></p>
+    <div id="ctTxt" style="${CSS_CONTRATO};max-height:60vh">${mdHtml(a.texto_assinado)}</div>
+    <div class="action" style="margin-top:12px"><b>Registro da assinatura eletrônica</b><div class="small">Assinado em ${dth(a.aceito_em)} por ${esc(a.rep_nome)}, CPF ${esc(fmtDoc(a.rep_cpf))}, com o login ${esc(a.email)}. Hash SHA-256 do texto: ${esc(a.hash_sha256)}</div></div>
+    <button class="btn" style="margin-top:12px" id="ctCopy">Copiar texto</button>`);
+  $('#ctCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(a.texto_assinado+'\n\n---\nAssinado eletronicamente em '+dth(a.aceito_em)+' por '+a.rep_nome+' (CPF '+fmtDoc(a.rep_cpf)+'), login '+a.email+'. SHA-256: '+a.hash_sha256); toast('Texto copiado.'); }catch(e){ toast('Não foi possível copiar.',true); } };
+}
+async function vContratoAdmin(){
+  const {data:cfg}=await sb.from('prem_config').select('*').single();
+  const pend=S.clientes.filter(c=>c.ativo && !c.contrato_aceito_em);
+  $('#main').innerHTML=`
+    <div class="toolbar"><h1 style="margin:0">Contrato</h1></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="card"><h2>Dados da nossa empresa (CONTRATADA)</h2>
+      <div class="f"><label>Razão social</label><input id="cfRaz" value="${esc(cfg.contratada_razao||'')}"></div>
+      <div class="row"><div class="f"><label>CNPJ</label><input id="cfCnpj" value="${esc(cfg.contratada_cnpj||'')}"></div>
+        <div class="f"><label>Foro (município/UF)</label><input id="cfForo" placeholder="São Paulo/SP" value="${esc(cfg.contrato_foro||'')}"></div></div>
+      <div class="f"><label>Endereço completo</label><input id="cfEnd" value="${esc(cfg.contratada_endereco||'')}"></div>
+      <div class="f"><label>Representante legal (nome e CPF)</label><input id="cfRep" placeholder="Nome, CPF 000.000.000-00" value="${esc(cfg.contratada_rep||'')}"></div>
+      <div class="f"><label style="font-weight:500"><input type="checkbox" id="cfExig" style="width:auto" ${cfg.contrato_exigir?'checked':''}> Exigir assinatura do contrato para os clientes usarem o sistema</label></div>
+      <button class="btn pri" id="cfSave">Salvar</button>
+      <p class="small muted">Enquanto a exigência estiver desligada, os clientes usam o sistema normalmente. Ligue depois de preencher os dados acima.</p></div>
+    <div class="card"><h2>Situação dos clientes</h2>
+      <p class="muted small" style="margin-top:0">${pend.length} cliente(s) ativo(s) sem contrato assinado.</p>
+      <table class="tbl"><tbody>${S.clientes.map(c=>`<tr><td>${esc(c.nome)}</td><td>${c.contrato_aceito_em?`<span class="pill st-concluida">Assinado ${dt(c.contrato_aceito_em)}</span>`:'<span class="pill st-enviada">Pendente</span>'}</td>
+        <td class="num">${c.contrato_aceito_em?`<button class="btn sm" data-ver="${c.id}">Ver</button>`:''}</td></tr>`).join('')}</tbody></table>
+      <button class="btn sm" id="cfPrev" style="margin-top:12px">Pré-visualizar modelo</button></div></div>`;
+  $('#cfSave').onclick=()=>busy($('#cfSave'),async()=>{
+    const row={contratada_razao:$('#cfRaz').value.trim()||null, contratada_cnpj:$('#cfCnpj').value.trim()||null, contratada_endereco:$('#cfEnd').value.trim()||null,
+      contratada_rep:$('#cfRep').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked};
+    if(row.contrato_exigir && (!row.contratada_razao||!row.contratada_cnpj||!row.contratada_endereco||!row.contratada_rep||!row.contrato_foro))
+      throw new Error('Preencha todos os dados da empresa antes de exigir a assinatura.');
+    const {error}=await sb.from('prem_config').update(row).eq('id',true); if(error) throw error; toast('Configuração salva.'); });
+  document.querySelectorAll('[data-ver]').forEach(b=>b.onclick=()=>verContratoAssinado(b.dataset.ver));
+  $('#cfPrev').onclick=()=>busy($('#cfPrev'),async()=>{
+    const cli=S.clientes[0]; if(!cli) throw new Error('Cadastre um cliente para pré-visualizar.');
+    const {data,error}=await sb.rpc('prem_contrato_render',{p_cliente:cli.id,p_rep_nome:null,p_rep_cpf:null,p_endereco:null}); if(error) throw error;
+    abrirModal(`<h1>Pré-visualização (com dados de ${esc(cli.nome)})</h1><div style="${CSS_CONTRATO};max-height:65vh">${mdHtml(data.texto)}</div>`); });
 }
 
 // ================= CLIENTE: MINHAS ORDENS =================
