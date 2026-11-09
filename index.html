@@ -171,6 +171,8 @@ header{padding-top:env(safe-area-inset-top)}
 .notif-item b{display:block;font-size:13.5px}.notif-item span{display:block;color:var(--muted);font-size:13px;margin-top:2px}.notif-item small{color:var(--muted);font-size:11.5px}
 .notif-rodape{padding:10px 16px;font-size:12px;color:var(--muted)}
 @media(max-width:700px){.notif-painel{top:calc(56px + env(safe-area-inset-top));left:8px;right:8px;width:auto;max-height:75vh}}
+.nfse-box{border:1px solid var(--line);background:#fff;border-radius:10px;padding:12px;margin-bottom:14px}
+.nfse-tab td{padding:6px 4px}
 .install-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:16;background:#101828;color:#fff;border-radius:14px;padding:12px 14px;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
 .install-bar img{width:36px;height:36px;border-radius:9px}
 .install-bar .btn{padding:8px 12px}
@@ -473,6 +475,10 @@ async function detalhe(id){
       <div class="row"><div class="f"><label>Nº da nota</label><input id="aNum"></div>
       <div class="f"><label>Taxa desta ordem (%)</label><input id="aTaxa" value="${String(o.taxa_percentual).replace('.',',')}"></div></div>
       <div class="calc" id="aCalc"></div>
+      <div class="nfse-box"><div class="toolbar" style="margin:0 0 8px"><b>Dados para a NFS-e</b><div class="spacer"></div><button type="button" class="btn sm" id="nfCopiar">Copiar discriminação</button></div>
+        <table class="tbl nfse-tab"><tbody id="nfValores"></tbody></table>
+        <label style="margin-top:10px">Discriminação dos serviços</label><textarea id="nfTexto" readonly style="min-height:230px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
+        <p class="small muted" style="margin:6px 0 0">Na NFS-e: valor do serviço = total; deduções = repasse + transferência; base de cálculo do ISS = taxa. Guarde os comprovantes de pagamento aos favorecidos (ficam na ordem) para comprovar o repasse.</p></div>
       <div class="f"><label>Arquivo da nota (PDF)</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
       <button class="btn pri" id="aBtn">Enviar nota ao cliente</button></div>`;
   if(!admin && o.status==='nota_emitida') acao = `<div class="action"><h2>Pague a nota e envie o comprovante</h2>
@@ -513,8 +519,14 @@ async function detalhe(id){
   if(admin && o.status==='enviada'){
     const upd=()=>{ const t=parseValor($('#aTaxa').value), tx=Math.round(o.valor_pagamento*t)/100;
       const ted=Number(o.custo_transferencia||0);
-      $('#aCalc').innerHTML=`<div>Pagamentos<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div>${ted?`<div>Custo TED<b>${brl(ted)}</b></div>`:''}<div>Valor da nota<b>${brl(Number(o.valor_pagamento)+tx+ted)}</b></div>`; };
-    $('#aTaxa').oninput=upd; upd();
+      $('#aCalc').innerHTML=`<div>Pagamentos<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div>${ted?`<div>Custo TED<b>${brl(ted)}</b></div>`:''}<div>Valor da nota<b>${brl(Number(o.valor_pagamento)+tx+ted)}</b></div>`;
+      const rep_=Number(o.valor_pagamento), tot=rep_+tx+ted, ded=rep_+ted;
+      $('#nfValores').innerHTML=[['Valor total do serviço',tot],['Deduções (repasse + transferência)',ded],['Base de cálculo do ISS (taxa)',tx]].map(([l,v])=>`<tr><td>${l}</td><td class="num"><b>${brl(v)}</b></td></tr>`).join('');
+      $('#nfTexto').value=textoNfse(o, rep_, tx, ted, S.cfgNota); };
+    $('#aTaxa').oninput=upd;
+    if(!S.cfgNota){ const {data}=await sb.from('prem_config').select('contratada_razao,contratada_cnpj,contratada_banco').single(); S.cfgNota=data||{}; }
+    upd();
+    $('#nfCopiar').onclick=async()=>{ try{ await navigator.clipboard.writeText($('#nfTexto').value); toast('Discriminação copiada. Cole no Emissor Nacional.'); }catch(e){ $('#nfTexto').select(); toast('Selecionei o texto: copie com Ctrl+C.',true); } };
     btn.onclick=()=>busy(btn,async()=>{
       const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o arquivo da nota.');
       const path=await upload(o.cliente_id,o.id,'nota',f);
@@ -539,6 +551,19 @@ async function detalhe(id){
     const m=$('#cMot').value.trim(); if(!m) throw new Error('Informe o motivo do cancelamento.');
     const {error}=await sb.rpc('prem_cancelar',{p_ordem:o.id,p_motivo:m}); if(error) throw error;
     toast('Ordem cancelada.'); fecharModal(); recarregar(); });
+}
+
+function textoNfse(o, rep_, tx, ted, cfg){
+  cfg=cfg||{}; const f=v=>brl(v).replace(/\u00a0/g,' ');
+  const linhas=[`Campanha de Incentivo – ${o.prem_campanhas?.nome||''} – Ordem nº ${o.numero}`, `Valor Total: ${f(rep_+tx+ted)}`, 'Sendo:', '',
+    `• Valor do repasse de premiações a terceiros (pagos diretamente aos premiados): ${f(rep_)}`,
+    `• Valor da taxa de administração da campanha: ${f(tx)}`];
+  if(ted) linhas.push(`• Custo de transferência (TED): ${f(ted)}`);
+  linhas.push('', 'Observações:', `- Base de cálculo do ISS: ${f(tx)} (apenas sobre o valor da taxa de administração).`,
+    `- Deduções: ${f(rep_+ted)} referentes a valores repassados a terceiros${ted?' e custos de transferência':''}, que não constituem receita do prestador.`,
+    `- Favorecidos: ${o.qtd_favorecidos||''} pessoa(s), conforme relação e comprovantes vinculados à ordem nº ${o.numero}.`);
+  if(cfg.contratada_banco) linhas.push('', 'Dados para pagamento:', (cfg.contratada_razao||''), cfg.contratada_banco);
+  return linhas.join('\n');
 }
 
 // ================= NOVA ORDEM (cliente ou admin) =================
@@ -935,6 +960,7 @@ async function vContratoAdmin(){
         <div class="f"><label>Foro (município/UF)</label><input id="cfForo" placeholder="São Paulo/SP" value="${esc(cfg.contrato_foro||'')}"></div></div>
       <div class="f"><label>Endereço completo</label><input id="cfEnd" value="${esc(cfg.contratada_endereco||'')}"></div>
       <div class="f"><label>Representante legal (nome e CPF)</label><input id="cfRep" placeholder="Nome, CPF 000.000.000-00" value="${esc(cfg.contratada_rep||'')}"></div>
+      <div class="f"><label>Dados bancários para pagamento (vão na discriminação da NFS-e)</label><textarea id="cfBanco" placeholder="Banco: 000 - Nome\nAg.: 0000  C/C: 00000-0\nChave PIX (CNPJ): 58.489.885/0001-14" style="min-height:80px">${esc(cfg.contratada_banco||'')}</textarea></div>
       <div class="f"><label style="font-weight:500"><input type="checkbox" id="cfExig" style="width:auto" ${cfg.contrato_exigir?'checked':''}> Exigir assinatura do contrato para os clientes usarem o sistema</label></div>
       <button class="btn pri" id="cfSave">Salvar</button>
       <p class="small muted">Enquanto a exigência estiver desligada, os clientes usam o sistema normalmente. Ligue depois de preencher os dados acima.</p></div>
@@ -945,10 +971,10 @@ async function vContratoAdmin(){
       <button class="btn sm" id="cfPrev" style="margin-top:12px">Pré-visualizar modelo</button></div></div>`;
   $('#cfSave').onclick=()=>busy($('#cfSave'),async()=>{
     const row={contratada_razao:$('#cfRaz').value.trim()||null, contratada_cnpj:$('#cfCnpj').value.trim()||null, contratada_endereco:$('#cfEnd').value.trim()||null,
-      contratada_rep:$('#cfRep').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked};
+      contratada_rep:$('#cfRep').value.trim()||null, contratada_banco:$('#cfBanco').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked};
     if(row.contrato_exigir && (!row.contratada_razao||!row.contratada_cnpj||!row.contratada_endereco||!row.contratada_rep||!row.contrato_foro))
       throw new Error('Preencha todos os dados da empresa antes de exigir a assinatura.');
-    const {error}=await sb.from('prem_config').update(row).eq('id',true); if(error) throw error; toast('Configuração salva.'); });
+    const {error}=await sb.from('prem_config').update(row).eq('id',true); if(error) throw error; S.cfgNota=null; toast('Configuração salva.'); });
   document.querySelectorAll('[data-ver]').forEach(b=>b.onclick=()=>verContratoAssinado(b.dataset.ver));
   $('#cfPrev').onclick=()=>busy($('#cfPrev'),async()=>{
     const cli=S.clientes[0]; if(!cli) throw new Error('Cadastre um cliente para pré-visualizar.');
