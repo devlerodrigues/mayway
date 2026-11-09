@@ -254,12 +254,12 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento']]);
     await carregar(); ir(S.tab||'painel');
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
     S.cliente = c;
-    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['favorecidos','Favorecidos']]);
+    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['favorecidos','Favorecidos']]);
     await carregar(); ir(S.tab||'minhas');
   }
 }
@@ -269,16 +269,16 @@ function montarNav(items){
 }
 function ir(tab){
   S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos}[tab])();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas}[tab])();
 }
 
 // ================= DADOS =================
 async function carregar(){
-  const q = sb.from('prem_ordens').select('*, prem_clientes(nome)').order('created_at',{ascending:false}).limit(1000);
-  const [o, c, f, cfg] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}),
-    sb.from('prem_favorecidos').select('*').eq('ativo',true).order('nome'), sb.from('prem_config').select('custo_ted').single() ]);
+  const q = sb.from('prem_ordens').select('*, prem_clientes(nome), prem_campanhas(nome,numero)').order('created_at',{ascending:false}).limit(1000);
+  const [o, c, f, cfg, cp] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}),
+    sb.from('prem_favorecidos').select('*').eq('ativo',true).order('nome'), sb.from('prem_config').select('*').single(), sb.from('prem_campanhas').select('*, prem_clientes(nome)').order('periodo_inicio',{ascending:false}) ]);
   if(o.error) toast(o.error.message,true);
-  S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data) S.custoTed = Number(cfg.data.custo_ted);
+  S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data){ S.custoTed = Number(cfg.data.custo_ted); S.prazoPos = cfg.data.prazo_pos_campanha_dias; S.durMax = cfg.data.duracao_max_meses; } S.camps = cp.data||[];
 }
 async function recarregar(){ await carregar(); ir(S.tab); }
 setInterval(()=>{ if(S.papel && $('#modal').classList.contains('hidden') && !['nova','favorecidos'].includes(S.tab)) recarregar(); }, 60000);
@@ -300,7 +300,7 @@ function vPainel(){
       <div class="card kpi"><div class="l">Faturamento do mês</div><div class="v">${brl(fatMes)}</div><div class="s">${mes.length} ordens concluídas</div></div>
       <div class="card kpi"><div class="l">Faturamento em andamento</div><div class="v">${brl(fatPipe)}</div><div class="s">${pipe.length} ordens abertas</div></div>
       <div class="card kpi"><div class="l">Volume pago no mês</div><div class="v">${brl(volMes)}</div><div class="s">repassado aos favorecidos</div></div>
-      <div class="card kpi"><div class="l">Precisam de você</div><div class="v">${acao.length}</div><div class="s">${cnt('enviada')} emitir nota · ${cnt('pago_cliente')} pagar</div></div>
+      <div class="card kpi"><div class="l">Precisam de você</div><div class="v">${acao.length + S.camps.filter(c=>c.status==='em_analise').length}</div><div class="s">${cnt('enviada')} emitir nota · ${cnt('pago_cliente')} pagar · ${S.camps.filter(c=>c.status==='em_analise').length} campanha(s) p/ aprovar</div></div>
     </div>
     <div class="card"><h2>Fila de ação</h2>${tabelaOrdens(acao, true)}</div>`;
   ligarLinhas();
@@ -380,7 +380,7 @@ async function detalhe(id){
   const podeCancelar = o.status!=='concluida' && o.status!=='cancelada' && (admin || o.status==='enviada');
   abrirModal(`
     <div class="muted small">Ordem #${o.numero} · ${dth(o.created_at)}</div>
-    <h1 style="margin:4px 0 6px">${esc(o.descricao)}</h1>
+    <h1 style="margin:4px 0 6px">${esc(o.descricao)}</h1>${o.prem_campanhas?`<div class="muted" style="margin-bottom:6px">Campanha: <b>${esc(o.prem_campanhas.nome)}</b></div>`:''}
     <div>${pill(o.status, !admin)}</div>
     ${step?`<div class="steps">${[1,2,3,4].map(i=>`<div class="${i<=step?'on':''}"></div>`).join('')}</div>`:'<div style="height:14px"></div>'}
     <dl class="dl">
@@ -442,6 +442,7 @@ function vNova(){
     <h1>Nova ordem de pagamento</h1>
     <form id="nForm">
       ${admin?`<div class="f"><label>Cliente</label><select id="nCli" required><option value="">Selecione…</option>${S.clientes.filter(c=>c.ativo).map(c=>`<option value="${c.id}">${esc(c.nome)} (${pct(c.taxa_percentual)})</option>`).join('')}</select></div>`:''}
+      <div class="f"><label>Campanha</label><div id="nCampBox"></div></div>
       <div class="row">
         <div class="f"><label>Descrição</label><input id="nDesc" required placeholder="Ex.: Premiação equipe de vendas – novembro"></div>
         <div class="f"><label>Data para pagamento</label><input id="nVenc" type="date"></div>
@@ -455,7 +456,8 @@ function vNova(){
       <div class="f"><label>Observação</label><textarea id="nObs"></textarea></div>
       <button class="btn pri" id="nBtn">Enviar ordem</button>
     </form></div>`;
-  if(admin){ $('#nCli').value = S.favCli||''; $('#nCli').onchange=()=>{ S.favCli=$('#nCli').value; NOVA.itens=[{fav:'',valor:''}]; desenharItens(); }; }
+  if(admin){ $('#nCli').value = S.favCli||''; $('#nCli').onchange=()=>{ S.favCli=$('#nCli').value; NOVA.itens=[{fav:'',valor:''}]; desenharItens(); desenharCamp(); }; }
+  desenharCamp();
   $('#nAdd').onclick=()=>{ NOVA.itens.push({fav:'',valor:''}); desenharItens(); };
   $('#nNovoFav').onclick=()=>{ const c=cliNova(); if(admin&&!c) return toast('Selecione o cliente primeiro.',true);
     formFav(null, c, fav=>{ const vazio=NOVA.itens.find(i=>!i.fav); if(vazio) vazio.fav=fav.id; else NOVA.itens.push({fav:fav.id,valor:''}); desenharItens(); }); };
@@ -467,7 +469,8 @@ function vNova(){
     for(const i of itens){ if(!i.fav) throw new Error('Escolha o favorecido em todas as linhas.'); if(parseValor(i.valor)<=0) throw new Error('Informe o valor de todos os favorecidos.'); }
     const id=crypto.randomUUID();
     const anexo=await upload(cliente_id,id,'ordem',$('#nFile').files[0]);
-    const {error}=await sb.rpc('prem_criar_ordem',{ p_id:id, p_cliente:cliente_id, p_descricao:$('#nDesc').value.trim(),
+    const campanha=$('#nCamp')?.value; if(!campanha) throw new Error('Escolha a campanha desta ordem. Sem campanha aprovada não é possível enviar ordens.');
+    const {error}=await sb.rpc('prem_criar_ordem',{ p_id:id, p_cliente:cliente_id, p_campanha:campanha, p_descricao:$('#nDesc').value.trim(),
       p_vencimento:$('#nVenc').value||null, p_observacao:$('#nObs').value.trim()||null, p_anexo:anexo,
       p_itens:itens.map(i=>({favorecido_id:i.fav, valor:parseValor(i.valor)})) });
     if(error) throw error;
@@ -562,12 +565,153 @@ function formFav(id, clienteId, onSaved){
   });};
 }
 
+// ================= CAMPANHAS =================
+const CST = { em_analise:['Em análise','st-enviada'], ajustes:['Ajustes solicitados','st-cancelada'], aprovada:['Aprovada','st-concluida'], reprovada:['Reprovada','st-cancelada'] };
+const hoje = () => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),d.getDate()); };
+const dataDe = s => new Date(s+'T00:00:00');
+const diasAte = s => Math.round((dataDe(s)-hoje())/86400000);
+function campsValidas(cli){ const pz=Number(S.prazoPos??30);
+  return S.camps.filter(c=>c.cliente_id===cli && c.status==='aprovada' && diasAte(c.periodo_inicio)<=0 && diasAte(c.periodo_fim)>=-pz); }
+function campSituacao(c){
+  if(c.status!=='aprovada') return `<span class="pill ${CST[c.status][1]}">${CST[c.status][0]}</span>`;
+  const pz=Number(S.prazoPos??30);
+  if(diasAte(c.periodo_inicio)>0) return `<span class="pill st-nota_emitida">Aprovada · começa ${dIso(c.periodo_inicio)}</span>`;
+  if(diasAte(c.periodo_fim)>=0) return `<span class="pill st-concluida">Em andamento</span>`;
+  if(diasAte(c.periodo_fim)>=-pz) return `<span class="pill st-pago_cliente">Encerrada · ordens até ${new Date(dataDe(c.periodo_fim).getTime()+pz*86400000).toLocaleDateString('pt-BR')}</span>`;
+  return `<span class="pill st-cancelada">Encerrada</span>`;
+}
+function regulamento(emp){
+  emp = emp || 'A empresa';
+  return [`Ao participar, o colaborador declara conhecer e concordar com todas as regras desta campanha.`,
+    `${emp} poderá ajustar objetivos e critérios quando necessário, comunicando antes todos os participantes.`,
+    `Os prêmios têm natureza de incentivo e reconhecimento por desempenho superior ao ordinariamente esperado, não integram a remuneração e não se incorporam ao salário, nos termos do art. 457, §§ 2º e 4º, da CLT (redação da Lei nº 13.467/2017).`,
+    `Situações não previstas neste briefing serão decididas pela diretoria de ${emp}.`];
+}
+function desenharCamp(){
+  const box=$('#nCampBox'); if(!box) return;
+  const admin=S.papel==='admin', cli=cliNova(), lista=cli?campsValidas(cli):[];
+  if(!cli){ box.innerHTML='<p class="muted" style="margin:0">Selecione o cliente.</p>'; return; }
+  if(!lista.length){
+    box.innerHTML = `<div class="msg err" style="margin:0">Não há campanha aprovada e vigente${admin?' para este cliente':''}. Sem campanha não é possível enviar ordens.
+      ${admin?'':' <button type="button" class="link" onclick="formCampanha()">Preencher briefing da campanha</button>'}</div>`;
+    $('#nBtn') && ($('#nBtn').disabled=true); return; }
+  $('#nBtn') && ($('#nBtn').disabled=false);
+  box.innerHTML = `<select id="nCamp" required>${lista.length>1?'<option value="">Escolha a campanha…</option>':''}${lista.map(c=>`<option value="${c.id}">${esc(c.nome)} · ${dIso(c.periodo_inicio)} a ${dIso(c.periodo_fim)}</option>`).join('')}</select>`;
+}
+function vCampanhas(){
+  const admin=S.papel==='admin';
+  const f = S.campFiltro===undefined ? (admin && S.camps.some(c=>c.status==='em_analise') ? 'em_analise' : '') : S.campFiltro;
+  const lista=S.camps.filter(c=>!f||c.status===f);
+  const pagoPor = id => S.ordens.filter(o=>o.campanha_id===id && o.status!=='cancelada').reduce((a,o)=>a+Number(o.valor_pagamento),0);
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Campanhas</h1><div class="spacer"></div>
+      <select id="cpF" style="width:auto"><option value="">Todas</option>${Object.entries(CST).map(([k,v])=>`<option value="${k}">${v[0]}</option>`).join('')}</select>
+      <button class="btn pri" onclick="formCampanha()">+ Nova campanha</button></div>
+    <p class="muted" style="margin-top:-6px">Toda ordem de pagamento precisa estar ligada a uma campanha aprovada. Duração máxima: ${S.durMax||3} meses; ordens aceitas até ${S.prazoPos??30} dias após o fim.</p>
+    <div class="card">${lista.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Nº</th>${admin?'<th>Cliente</th>':''}<th>Campanha</th><th>Período</th><th class="num">Orçamento</th><th class="num">Pago</th><th>Situação</th></tr></thead><tbody>
+      ${lista.map(c=>`<tr class="click" data-camp="${c.id}"><td>#${c.numero}</td>${admin?`<td>${esc(c.prem_clientes?.nome)}</td>`:''}<td><b>${esc(c.nome)}</b><div class="muted small">${esc(c.participantes).slice(0,80)}</div></td>
+        <td>${dIso(c.periodo_inicio)} a ${dIso(c.periodo_fim)}</td><td class="num">${c.orcamento_previsto?brl(c.orcamento_previsto):'—'}</td><td class="num">${brl(pagoPor(c.id))}</td><td>${campSituacao(c)}</td></tr>`).join('')}
+      </tbody></table></div>`:`<div class="empty">${f?'Nenhuma campanha com esse status.':'Nenhuma campanha cadastrada ainda.'}</div>`}</div>`;
+  $('#cpF').value=f; $('#cpF').onchange=e=>{ S.campFiltro=e.target.value; vCampanhas(); };
+  document.querySelectorAll('[data-camp]').forEach(tr=>tr.onclick=()=>detalheCampanha(tr.dataset.camp));
+}
+function detalheCampanha(id){
+  const c=S.camps.find(x=>x.id===id); if(!c) return;
+  const admin=S.papel==='admin';
+  const ords=S.ordens.filter(o=>o.campanha_id===id && o.status!=='cancelada');
+  const pago=ords.reduce((a,o)=>a+Number(o.valor_pagamento),0);
+  const emp = admin ? c.prem_clientes?.nome : S.cliente?.nome;
+  const bloco=(t,v)=>v?`<h2 style="margin:16px 0 6px">${t}</h2><div style="white-space:pre-wrap">${esc(v)}</div>`:'';
+  abrirModal(`
+    <div class="muted small">Campanha #${c.numero}${admin?' · '+esc(emp):''}</div>
+    <h1 style="margin:4px 0 6px">${esc(c.nome)}</h1>
+    <div>${campSituacao(c)}</div>
+    ${c.parecer&&c.status!=='aprovada'?`<div class="msg err" style="margin-top:12px">${esc(c.parecer)}</div>`:''}
+    <dl class="dl" style="margin-top:16px">
+      <dt>Período</dt><dd>${dIso(c.periodo_inicio)} a ${dIso(c.periodo_fim)}</dd>
+      <dt>Orçamento previsto</dt><dd>${c.orcamento_previsto?brl(c.orcamento_previsto):'—'}</dd>
+      <dt>Já pago em ordens</dt><dd>${brl(pago)} <span class="muted">(${ords.length} ordens)</span></dd>
+      ${c.aprovada_em?`<dt>Aprovada em</dt><dd>${dth(c.aprovada_em)}</dd>`:''}
+    </dl>
+    ${bloco('1. Participantes',c.participantes)}${bloco('2. Objetivos',c.objetivos)}${bloco('3. Critérios de avaliação',c.criterios_avaliacao)}
+    ${bloco('4. Critérios de premiação',c.criterios_premiacao)}${bloco('5. Formas de bonificação',c.formas_bonificacao)}${bloco('Considerações adicionais',c.consideracoes)}
+    <h2 style="margin:16px 0 6px">Regulamento</h2><ul class="small" style="margin:0;padding-left:18px">${regulamento(emp).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>
+    <p class="small muted">Aceito em ${dth(c.aceite_em)}.</p>
+    ${c.logo?`<button class="btn sm" data-file="${esc(c.logo)}">📎 Logo da empresa</button>`:''}
+    ${admin && c.status!=='aprovada' ? `<div class="action" style="margin-top:16px"><h2>Análise</h2>
+      <div class="f"><label>Parecer / ajustes necessários</label><textarea id="cpPar">${esc(c.parecer||'')}</textarea></div>
+      <button class="btn pri" data-st="aprovada">Aprovar campanha</button> <button class="btn" data-st="ajustes">Pedir ajustes</button> <button class="btn danger" data-st="reprovada">Reprovar</button></div>`:''}
+    ${admin && c.status==='aprovada' ? `<div style="margin-top:16px"><button class="btn sm" data-st="ajustes">Reabrir para ajustes</button></div>`:''}
+    ${!admin && ['em_analise','ajustes'].includes(c.status) ? `<div style="margin-top:16px"><button class="btn" id="cpEd">Editar briefing</button></div>`:''}
+    ${admin ? `<div style="margin-top:8px"><button class="btn sm" id="cpEd">Editar briefing</button></div>`:''}`);
+  document.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
+  $('#cpEd') && ($('#cpEd').onclick=()=>formCampanha(id));
+  document.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>busy(b,async()=>{
+    const st=b.dataset.st, par=($('#cpPar')?.value||'').trim();
+    if(st!=='aprovada' && !par && $('#cpPar')) throw new Error('Escreva no parecer o que precisa ser ajustado.');
+    const {error}=await sb.from('prem_campanhas').update({status:st, parecer:par||c.parecer||null}).eq('id',id);
+    if(error) throw error; toast(st==='aprovada'?'Campanha aprovada. O cliente já pode enviar ordens.':'Campanha atualizada.'); fecharModal(); await carregar(); ir(S.tab);
+  }));
+}
+function formCampanha(id){
+  const admin=S.papel==='admin';
+  const c=S.camps.find(x=>x.id===id) || {};
+  const t=(k,l,dica,req=true)=>`<div class="f"><label>${l}</label><textarea id="cp_${k}" ${req?'required':''} placeholder="${esc(dica)}">${esc(c[k]||'')}</textarea></div>`;
+  const emp = admin ? (S.clientes.find(x=>x.id===(c.cliente_id||S.favCli))?.nome) : S.cliente?.nome;
+  abrirModal(`<h1>${id?'Editar campanha':'Briefing da campanha'}</h1>
+    <p class="muted" style="margin-top:0">Descreva a campanha de incentivo. Ela será analisada e, depois de aprovada, você poderá enviar as ordens de premiação vinculadas a ela.</p>
+    <form id="cpForm">
+      ${admin&&!id?`<div class="f"><label>Cliente</label><select id="cpCli" required><option value="">Selecione…</option>${S.clientes.filter(x=>x.ativo).map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></div>`:''}
+      <div class="f"><label>Nome da campanha</label><input id="cp_nome" required value="${esc(c.nome||'')}" placeholder="Ex.: Campanha de Vendas 1º Trimestre"></div>
+      <div class="row"><div class="f"><label>Início</label><input id="cp_ini" type="date" required value="${c.periodo_inicio||''}"></div>
+        <div class="f"><label>Fim (máx. ${S.durMax||3} meses)</label><input id="cp_fim" type="date" required value="${c.periodo_fim||''}"></div></div>
+      ${t('participantes','1. Participantes','Quem participa: equipes, cargos, lojas, quantidade aproximada de pessoas.')}
+      ${t('objetivos','2. Objetivos da campanha','O que a empresa quer alcançar: metas de venda, produtos foco, indicadores a melhorar.')}
+      ${t('criterios_avaliacao','3. Critérios de avaliação','Como o desempenho será medido: indicadores, de onde vêm os dados, com que frequência.')}
+      ${t('criterios_premiacao','4. Critérios de premiação','Quem recebe e quanto: faixas de atingimento, ranking, valor por meta batida.')}
+      ${t('formas_bonificacao','5. Formas de bonificação','Como o prêmio será pago: PIX, valor fixo ou variável, quando será pago.')}
+      <div class="row"><div class="f"><label>Orçamento previsto (R$) – opcional</label><input id="cp_orc" inputmode="decimal" value="${c.orcamento_previsto?String(c.orcamento_previsto).replace('.',','):''}"></div>
+        <div class="f"><label>Logo da empresa (PNG fundo branco/transparente) – opcional</label><input id="cp_logo" type="file" accept="image/png,image/*"></div></div>
+      ${t('consideracoes','Considerações adicionais – opcional','Regras extras, exceções, observações.',false)}
+      <div class="card" style="background:#fafbfc;padding:14px;margin-bottom:12px"><b>Regulamento</b>
+        <ul class="small" id="cpReg" style="margin:8px 0 0;padding-left:18px">${regulamento(emp).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+      <div class="f"><label style="font-weight:500"><input type="checkbox" id="cp_ok" style="width:auto" required> Li e concordo com o regulamento acima${emp?' em nome de '+esc(emp):''}.</label></div>
+      <button class="btn pri" id="cpBtn">${id?'Salvar e enviar para análise':'Enviar para análise'}</button>
+    </form>`);
+  if(admin&&!id){ $('#cpCli').value=S.favCli||''; }
+  $('#cpForm').onsubmit=e=>{e.preventDefault(); busy($('#cpBtn'),async()=>{
+    const ini=$('#cp_ini').value, fim=$('#cp_fim').value;
+    if(fim<ini) throw new Error('A data de fim deve ser depois do início.');
+    const lim=new Date(dataDe(ini)); lim.setMonth(lim.getMonth()+(S.durMax||3)); lim.setDate(lim.getDate()-1);
+    if(dataDe(fim)>lim) throw new Error(`A campanha pode durar no máximo ${S.durMax||3} meses (até ${lim.toLocaleDateString('pt-BR')}).`);
+    const cli = admin ? (c.cliente_id || $('#cpCli').value) : S.clienteId; if(!cli) throw new Error('Selecione o cliente.');
+    const cid = id || crypto.randomUUID();
+    const row={ nome:$('#cp_nome').value.trim(), periodo_inicio:ini, periodo_fim:fim, aceite_regulamento:true,
+      participantes:$('#cp_participantes').value.trim(), objetivos:$('#cp_objetivos').value.trim(), criterios_avaliacao:$('#cp_criterios_avaliacao').value.trim(),
+      criterios_premiacao:$('#cp_criterios_premiacao').value.trim(), formas_bonificacao:$('#cp_formas_bonificacao').value.trim(),
+      consideracoes:$('#cp_consideracoes').value.trim()||null, orcamento_previsto:parseValor($('#cp_orc').value)||null };
+    const lf=$('#cp_logo').files[0]; if(lf) row.logo=await upload(cli,'campanhas/'+cid,'logo',lf);
+    const res = id ? await sb.from('prem_campanhas').update(row).eq('id',id) : await sb.from('prem_campanhas').insert({...row, id:cid, cliente_id:cli});
+    if(res.error) throw res.error;
+    fecharModal(); toast(admin?'Campanha salva.':'Campanha enviada para análise.'); await carregar(); ir(admin?'campanhas':(S.tab==='nova'?'nova':'campanhas'));
+  });};
+}
+
 // ================= CLIENTE: MINHAS ORDENS =================
 function vMinhas(){
   const pend=S.ordens.filter(o=>o.status==='nota_emitida');
+  const validas=campsValidas(S.clienteId), analise=S.camps.filter(c=>c.status==='em_analise'), ajustes=S.camps.filter(c=>c.status==='ajustes');
+  const acabando=S.camps.filter(c=>c.status==='aprovada'&&diasAte(c.periodo_fim)>=0&&diasAte(c.periodo_fim)<=15);
+  const avisoCamp = !validas.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--warn)"><h2>${analise.length?'Sua campanha está em análise':'Cadastre sua campanha para enviar ordens'}</h2>
+      <p class="muted" style="margin:0 0 10px">${analise.length?'Assim que for aprovada você já pode enviar as ordens de pagamento.':'As premiações precisam estar ligadas a uma campanha de incentivo aprovada. Preencha o briefing da campanha.'}</p>
+      ${analise.length?'':`<button class="btn pri" onclick="formCampanha()">Preencher briefing da campanha</button>`}</div>`
+    : (acabando.length?`<div class="card" style="margin-bottom:16px;border-color:var(--warn)"><h2>A campanha "${esc(acabando[0].nome)}" termina em ${dIso(acabando[0].periodo_fim)}</h2>
+      <p class="muted" style="margin:0 0 10px">Cadastre a campanha do próximo período para não interromper as premiações.</p><button class="btn" onclick="formCampanha()">Cadastrar próxima campanha</button></div>`:'');
+  const avisoAj = ajustes.length?`<div class="card" style="margin-bottom:16px;border-color:var(--bad)"><h2>Campanha com ajustes solicitados</h2><p class="muted" style="margin:0 0 10px">${esc(ajustes[0].parecer||'')}</p><button class="btn" onclick="formCampanha('${ajustes[0].id}')">Ajustar campanha</button></div>`:'';
   $('#main').innerHTML = `
     <div class="toolbar"><h1 style="margin:0">Olá, ${esc(S.cliente?.nome||'')}</h1><div class="spacer"></div>
       <button class="btn sm" onclick="recarregar()">Atualizar</button><button class="btn pri" onclick="ir('nova')">+ Nova ordem</button></div>
+    ${avisoAj}${avisoCamp}
     ${pend.length?`<div class="card" style="margin-bottom:16px;border-color:var(--info)"><h2>Você tem ${pend.length} nota(s) para pagar</h2>
       <p class="muted" style="margin:0">Abra a ordem, baixe a nota, pague e anexe o comprovante para liberarmos o pagamento.</p></div>`:''}
     <div class="card">${tabelaOrdens(S.ordens,false)}</div>`;
