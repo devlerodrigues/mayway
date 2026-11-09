@@ -280,7 +280,7 @@ async function carregar(){
   const [o, c, f, cfg, cp] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}),
     sb.from('prem_favorecidos').select('*').eq('ativo',true).order('nome'), sb.from('prem_config').select('*').single(), sb.from('prem_campanhas').select('*, prem_clientes(nome)').order('periodo_inicio',{ascending:false}) ]);
   if(o.error) toast(o.error.message,true);
-  S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data){ S.custoTed = Number(cfg.data.custo_ted); S.prazoPos = cfg.data.prazo_pos_campanha_dias; S.durMax = cfg.data.duracao_max_meses; } S.camps = cp.data||[];
+  S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data){ S.custoTed = Number(cfg.data.custo_ted); S.prazoPos = cfg.data.prazo_pos_campanha_dias; S.durMax = cfg.data.duracao_max_meses; S.avisoRen = cfg.data.aviso_renovacao_dias; } S.camps = cp.data||[];
 }
 async function recarregar(){ await carregar(); ir(S.tab); }
 setInterval(()=>{ if(S.papel && $('#modal').classList.contains('hidden') && !['nova','favorecidos'].includes(S.tab)) recarregar(); }, 60000);
@@ -574,6 +574,21 @@ const dataDe = s => new Date(s+'T00:00:00');
 const diasAte = s => Math.round((dataDe(s)-hoje())/86400000);
 function campsValidas(cli){ const pz=Number(S.prazoPos??30);
   return S.camps.filter(c=>c.cliente_id===cli && c.status==='aprovada' && diasAte(c.periodo_inicio)<=0 && diasAte(c.periodo_fim)>=-pz); }
+const isoD = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function fimMax(ini){ const d=dataDe(ini); d.setMonth(d.getMonth()+(S.durMax||3)); d.setDate(d.getDate()-1); return isoD(d); }
+function podeRenovar(c){ if(c.status!=='aprovada' || S.camps.some(x=>x.renovada_de===c.id)) return false;
+  const d=diasAte(c.periodo_fim); return d<=(S.avisoRen??15) && d>=-(S.prazoPos??30); }
+function periodoRenov(c){ const d=dataDe(c.periodo_fim); d.setDate(d.getDate()+1); const ini=isoD(d); return [ini, fimMax(ini)]; }
+function renovarCampanha(id){
+  const c=S.camps.find(x=>x.id===id); const [ini,fim]=periodoRenov(c);
+  abrirModal(`<h1>Repetir a campanha "${esc(c.nome)}"?</h1>
+    <p>Vamos criar a mesma campanha, com o mesmo briefing e regulamento, para o próximo período:</p>
+    <div class="calc"><div>Novo período<b>${dIso(ini)} a ${dIso(fim)}</b></div><div>Duração<b>${S.durMax||3} meses</b></div></div>
+    <p class="muted small">A repetição já nasce aprovada. Se quiser mudar participantes, metas ou critérios, cadastre uma campanha nova em vez de repetir.</p>
+    <button class="btn pri" id="rnOk">Sim, repetir por mais ${S.durMax||3} meses</button> <button class="btn" onclick="fecharModal()">Agora não</button>`);
+  $('#rnOk').onclick=()=>busy($('#rnOk'),async()=>{ const {error}=await sb.rpc('prem_renovar_campanha',{p_campanha:id}); if(error) throw error;
+    fecharModal(); toast('Campanha repetida até '+dIso(fim)+'.'); await carregar(); ir(S.tab); });
+}
 function campSituacao(c){
   if(c.status!=='aprovada') return `<span class="pill ${CST[c.status][1]}">${CST[c.status][0]}</span>`;
   const pz=Number(S.prazoPos??30);
@@ -611,7 +626,7 @@ function vCampanhas(){
       <button class="btn pri" onclick="formCampanha()">+ Nova campanha</button></div>
     <p class="muted" style="margin-top:-6px">Toda ordem de pagamento precisa estar ligada a uma campanha aprovada. Duração máxima: ${S.durMax||3} meses; ordens aceitas até ${S.prazoPos??30} dias após o fim.</p>
     <div class="card">${lista.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Nº</th>${admin?'<th>Cliente</th>':''}<th>Campanha</th><th>Período</th><th class="num">Orçamento</th><th class="num">Pago</th><th>Situação</th></tr></thead><tbody>
-      ${lista.map(c=>`<tr class="click" data-camp="${c.id}"><td>#${c.numero}</td>${admin?`<td>${esc(c.prem_clientes?.nome)}</td>`:''}<td><b>${esc(c.nome)}</b><div class="muted small">${esc(c.participantes).slice(0,80)}</div></td>
+      ${lista.map(c=>`<tr class="click" data-camp="${c.id}"><td>#${c.numero}</td>${admin?`<td>${esc(c.prem_clientes?.nome)}</td>`:''}<td><b>${esc(c.nome)}</b>${c.renovada_de?` <span class="muted small">· repetição de #${S.camps.find(x=>x.id===c.renovada_de)?.numero??''}</span>`:''}${podeRenovar(c)?' <span class="pill st-enviada">Terminando</span>':''}<div class="muted small">${esc(c.participantes).slice(0,80)}</div></td>
         <td>${dIso(c.periodo_inicio)} a ${dIso(c.periodo_fim)}</td><td class="num">${c.orcamento_previsto?brl(c.orcamento_previsto):'—'}</td><td class="num">${brl(pagoPor(c.id))}</td><td>${campSituacao(c)}</td></tr>`).join('')}
       </tbody></table></div>`:`<div class="empty">${f?'Nenhuma campanha com esse status.':'Nenhuma campanha cadastrada ainda.'}</div>`}</div>`;
   $('#cpF').value=f; $('#cpF').onchange=e=>{ S.campFiltro=e.target.value; vCampanhas(); };
@@ -644,10 +659,12 @@ function detalheCampanha(id){
       <div class="f"><label>Parecer / ajustes necessários</label><textarea id="cpPar">${esc(c.parecer||'')}</textarea></div>
       <button class="btn pri" data-st="aprovada">Aprovar campanha</button> <button class="btn" data-st="ajustes">Pedir ajustes</button> <button class="btn danger" data-st="reprovada">Reprovar</button></div>`:''}
     ${admin && c.status==='aprovada' ? `<div style="margin-top:16px"><button class="btn sm" data-st="ajustes">Reabrir para ajustes</button></div>`:''}
+    ${podeRenovar(c) ? `<div class="action" style="margin-top:16px"><b>Esta campanha termina em ${dIso(c.periodo_fim)}.</b> Quer repetir por mais ${S.durMax||3} meses (${dIso(periodoRenov(c)[0])} a ${dIso(periodoRenov(c)[1])})?<div style="margin-top:10px"><button class="btn pri" id="cpRen">Repetir campanha</button></div></div>`:''}
     ${!admin && ['em_analise','ajustes'].includes(c.status) ? `<div style="margin-top:16px"><button class="btn" id="cpEd">Editar briefing</button></div>`:''}
     ${admin ? `<div style="margin-top:8px"><button class="btn sm" id="cpEd">Editar briefing</button></div>`:''}`);
   document.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
   $('#cpEd') && ($('#cpEd').onclick=()=>formCampanha(id));
+  $('#cpRen') && ($('#cpRen').onclick=()=>renovarCampanha(id));
   document.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>busy(b,async()=>{
     const st=b.dataset.st, par=($('#cpPar')?.value||'').trim();
     if(st!=='aprovada' && !par && $('#cpPar')) throw new Error('Escreva no parecer o que precisa ser ajustado.');
@@ -666,7 +683,7 @@ function formCampanha(id){
       ${admin&&!id?`<div class="f"><label>Cliente</label><select id="cpCli" required><option value="">Selecione…</option>${S.clientes.filter(x=>x.ativo).map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></div>`:''}
       <div class="f"><label>Nome da campanha</label><input id="cp_nome" required value="${esc(c.nome||'')}" placeholder="Ex.: Campanha de Vendas 1º Trimestre"></div>
       <div class="row"><div class="f"><label>Início</label><input id="cp_ini" type="date" required value="${c.periodo_inicio||''}"></div>
-        <div class="f"><label>Fim (máx. ${S.durMax||3} meses)</label><input id="cp_fim" type="date" required value="${c.periodo_fim||''}"></div></div>
+        <div class="f"><label>Fim <span class="muted" id="cpFimHint">(escolha o início primeiro)</span></label><input id="cp_fim" type="date" required value="${c.periodo_fim||''}"></div></div>
       ${t('participantes','1. Participantes','Quem participa: equipes, cargos, lojas, quantidade aproximada de pessoas.')}
       ${t('objetivos','2. Objetivos da campanha','O que a empresa quer alcançar: metas de venda, produtos foco, indicadores a melhorar.')}
       ${t('criterios_avaliacao','3. Critérios de avaliação','Como o desempenho será medido: indicadores, de onde vêm os dados, com que frequência.')}
@@ -681,6 +698,12 @@ function formCampanha(id){
       <button class="btn pri" id="cpBtn">${id?'Salvar e enviar para análise':'Enviar para análise'}</button>
     </form>`);
   if(admin&&!id){ $('#cpCli').value=S.favCli||''; }
+  const ajustaFim=()=>{ const ini=$('#cp_ini').value, f=$('#cp_fim');
+    if(!ini){ f.disabled=true; f.removeAttribute('min'); f.removeAttribute('max'); return; }
+    const mx=fimMax(ini); f.disabled=false; f.min=ini; f.max=mx;
+    if(!f.value || f.value>mx || f.value<ini) f.value=mx;
+    $('#cpFimHint').textContent=`Até ${dIso(mx)} (máx. ${S.durMax||3} meses)`; };
+  $('#cp_ini').addEventListener('change',ajustaFim); ajustaFim();
   $('#cpForm').onsubmit=e=>{e.preventDefault(); busy($('#cpBtn'),async()=>{
     const ini=$('#cp_ini').value, fim=$('#cp_fim').value;
     if(fim<ini) throw new Error('A data de fim deve ser depois do início.');
@@ -831,17 +854,20 @@ async function vContratoAdmin(){
 function vMinhas(){
   const pend=S.ordens.filter(o=>o.status==='nota_emitida');
   const validas=campsValidas(S.clienteId), analise=S.camps.filter(c=>c.status==='em_analise'), ajustes=S.camps.filter(c=>c.status==='ajustes');
-  const acabando=S.camps.filter(c=>c.status==='aprovada'&&diasAte(c.periodo_fim)>=0&&diasAte(c.periodo_fim)<=15);
+  const acabando=S.camps.filter(podeRenovar);
   const avisoCamp = !validas.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--warn)"><h2>${analise.length?'Sua campanha está em análise':'Cadastre sua campanha para enviar ordens'}</h2>
       <p class="muted" style="margin:0 0 10px">${analise.length?'Assim que for aprovada você já pode enviar as ordens de pagamento.':'As premiações precisam estar ligadas a uma campanha de incentivo aprovada. Preencha o briefing da campanha.'}</p>
       ${analise.length?'':`<button class="btn pri" onclick="formCampanha()">Preencher briefing da campanha</button>`}</div>`
-    : (acabando.length?`<div class="card" style="margin-bottom:16px;border-color:var(--warn)"><h2>A campanha "${esc(acabando[0].nome)}" termina em ${dIso(acabando[0].periodo_fim)}</h2>
-      <p class="muted" style="margin:0 0 10px">Cadastre a campanha do próximo período para não interromper as premiações.</p><button class="btn" onclick="formCampanha()">Cadastrar próxima campanha</button></div>`:'');
+    : '';
+  const avisoRen = acabando.map(c=>{ const d=diasAte(c.periodo_fim), [ri,rf]=periodoRenov(c);
+      return `<div class="card" style="margin-bottom:16px;border-color:var(--warn)"><h2>A campanha "${esc(c.nome)}" ${d>0?`termina em ${d} dia(s) (${dIso(c.periodo_fim)})`:d===0?'termina hoje':`terminou em ${dIso(c.periodo_fim)}`}</h2>
+      <p class="muted" style="margin:0 0 10px">Quer repetir a mesma campanha por mais ${S.durMax||3} meses, de ${dIso(ri)} a ${dIso(rf)}? O sistema cria e aprova automaticamente.</p>
+      <button class="btn pri" onclick="renovarCampanha('${c.id}')">Sim, repetir campanha</button> <button class="btn" onclick="formCampanha()">Não, cadastrar uma nova</button></div>`; }).join('');
   const avisoAj = ajustes.length?`<div class="card" style="margin-bottom:16px;border-color:var(--bad)"><h2>Campanha com ajustes solicitados</h2><p class="muted" style="margin:0 0 10px">${esc(ajustes[0].parecer||'')}</p><button class="btn" onclick="formCampanha('${ajustes[0].id}')">Ajustar campanha</button></div>`:'';
   $('#main').innerHTML = `
     <div class="toolbar"><h1 style="margin:0">Olá, ${esc(S.cliente?.nome||'')}</h1><div class="spacer"></div>
       <button class="btn sm" onclick="recarregar()">Atualizar</button><button class="btn pri" onclick="ir('nova')">+ Nova ordem</button></div>
-    ${avisoAj}${avisoCamp}
+    ${avisoAj}${avisoCamp}${avisoRen}
     ${pend.length?`<div class="card" style="margin-bottom:16px;border-color:var(--info)"><h2>Você tem ${pend.length} nota(s) para pagar</h2>
       <p class="muted" style="margin:0">Abra a ordem, baixe a nota, pague e anexe o comprovante para liberarmos o pagamento.</p></div>`:''}
     <div class="card">${tabelaOrdens(S.ordens,false)}</div>`;
