@@ -105,6 +105,11 @@ textarea{min-height:70px;resize:vertical}
 .msg{padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:14px}
 .msg.err{background:var(--bad-bg);color:var(--bad)} .msg.ok{background:var(--ok-bg);color:var(--ok)}
 
+.logo{white-space:nowrap}
+nav{overflow-x:auto;scrollbar-width:none} nav::-webkit-scrollbar{display:none}
+nav button{white-space:nowrap;padding:8px 10px}
+.who{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1420px){.who{display:none}}
 /* ===== celular ===== */
 input,select,textarea{font-size:16px}
 header{padding-top:env(safe-area-inset-top)}
@@ -154,6 +159,18 @@ header{padding-top:env(safe-area-inset-top)}
   .login{padding:16px;align-items:start;padding-top:12vh}
   #__cap{left:10px;right:10px}
 }
+.sino{position:relative;padding:7px 9px;display:inline-grid;place-items:center}
+.sino .badge{position:absolute;top:-6px;right:-6px;background:#d92d20;color:#fff;border-radius:999px;font-size:11px;font-weight:700;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;border:2px solid #fff}
+.notif-painel{position:fixed;top:60px;right:max(12px,calc(50vw - 578px));width:380px;max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 40px rgba(16,24,40,.18);z-index:30}
+.notif-top{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff}
+.notif-push{margin:12px 14px;padding:12px;border-radius:10px;background:var(--brand-2);display:flex;flex-direction:column;gap:6px;font-size:13px}
+.notif-item{display:flex;gap:10px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 16px;cursor:pointer;font:inherit;color:inherit}
+.notif-item:hover{background:#f9fafb}
+.notif-item .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:0 0 8px;background:transparent}
+.notif-item.nova{background:#f6fbf9}.notif-item.nova .dot{background:var(--brand)}
+.notif-item b{display:block;font-size:13.5px}.notif-item span{display:block;color:var(--muted);font-size:13px;margin-top:2px}.notif-item small{color:var(--muted);font-size:11.5px}
+.notif-rodape{padding:10px 16px;font-size:12px;color:var(--muted)}
+@media(max-width:700px){.notif-painel{top:calc(56px + env(safe-area-inset-top));left:8px;right:8px;width:auto;max-height:75vh}}
 .install-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:16;background:#101828;color:#fff;border-radius:14px;padding:12px 14px;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
 .install-bar img{width:36px;height:36px;border-radius:9px}
 .install-bar .btn{padding:8px 12px}
@@ -344,14 +361,14 @@ async function iniciar(){
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
     montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['contrato','Contrato'],['equipe','Equipe'],['ajuda','Ajuda']]);
-    await carregar(); ir(S.tab||'painel');
+    await carregar(); ir(S.tab||'painel'); iniciarNotificacoes(); abrirPeloHash();
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
     S.cliente = c;
     const { data:cfgc } = await sb.from('prem_config').select('contrato_exigir').single();
     if(cfgc?.contrato_exigir && !c?.contrato_aceito_em){ $('#who').textContent = S.user.email; vContratoGate(); return; }
     montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['favorecidos','Favorecidos']].concat(c?.contrato_aceito_em?[['contrato','Contrato']]:[]).concat([['ajuda','Ajuda']]));
-    await carregar(); ir(S.tab||'minhas');
+    await carregar(); ir(S.tab||'minhas'); iniciarNotificacoes(); abrirPeloHash();
   }
 }
 function montarNav(items){
@@ -973,6 +990,73 @@ function vAjuda(){
     <div class="card" style="margin-top:6px"><h2>📱 Instalar no celular</h2><p class="muted" style="margin-top:0">Coloque o ícone da Mayway na tela inicial do seu celular, como um aplicativo.</p><button class="btn" onclick="abrirModal(instrucoesInstalar())">Ver como instalar (iPhone e Android)</button></div>
     <p class="muted small">Ainda com dúvida? Fale com a nossa equipe.</p>`;
 }
+
+// ================= NOTIFICAÇÕES =================
+const VAPID_PUBLIC = 'BBBmJbuwUwSR3tMKEahmC4ZJlydVM12-ag7sWmMIUDGlHFEyWgyNYB6W-nJjSahl5Mx4sAiph2gQJ14foTxz2AY';
+const N = { lista:[], canal:null, aberto:false };
+const naoLidas = () => N.lista.filter(n=>!n.lida_em).length;
+function tempoRel(d){ const s=(Date.now()-new Date(d))/1000; if(s<60) return 'agora'; if(s<3600) return Math.floor(s/60)+' min'; if(s<86400) return Math.floor(s/3600)+' h'; if(s<172800) return 'ontem'; return dt(d); }
+async function iniciarNotificacoes(){
+  if(!$('#sino')){ const b=document.createElement('button'); b.id='sino'; b.className='btn sm sino'; b.setAttribute('aria-label','Notificações');
+    b.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="badge hidden" id="sinoN"></span>';
+    b.onclick=e=>{ e.stopPropagation(); N.aberto?fecharPainelNotif():abrirPainelNotif(); };
+    const sair=[...document.querySelectorAll('header .btn')].find(x=>x.textContent.trim()==='Sair'); sair.parentNode.insertBefore(b,sair);
+    const p=document.createElement('div'); p.id='notifPainel'; p.className='notif-painel hidden'; p.onclick=e=>e.stopPropagation(); document.body.appendChild(p);
+    document.addEventListener('click',()=>{ if(N.aberto) fecharPainelNotif(); }); }
+  await carregarNotificacoes();
+  if(!N.canal){ N.canal = sb.channel('notif-'+S.user.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'prem_notificacoes',filter:'user_id=eq.'+S.user.id},
+    async (msg)=>{ N.lista.unshift(msg.new); atualizarSino(); toast('🔔 '+msg.new.titulo); if(N.aberto) desenharPainelNotif(); await carregar(); if(!['nova','favorecidos'].includes(S.tab) && $('#modal').classList.contains('hidden')) ir(S.tab); }).subscribe(); }
+}
+async function carregarNotificacoes(){ const {data}=await sb.from('prem_notificacoes').select('*').order('created_at',{ascending:false}).limit(40); N.lista=data||[]; atualizarSino(); }
+function atualizarSino(){ const n=naoLidas(), el=$('#sinoN'); if(!el) return; el.textContent=n>9?'9+':n; el.classList.toggle('hidden',!n);
+  try{ if('setAppBadge' in navigator){ n?navigator.setAppBadge(n):navigator.clearAppBadge(); } }catch(e){} }
+function abrirPainelNotif(){ N.aberto=true; desenharPainelNotif(); $('#notifPainel').classList.remove('hidden'); }
+function fecharPainelNotif(){ N.aberto=false; $('#notifPainel').classList.add('hidden'); }
+async function pushStatus(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return ehIOS && !standalone ? 'ios-instalar' : 'sem-suporte';
+  if(Notification.permission==='denied') return 'negado';
+  try{ const reg=await navigator.serviceWorker.getRegistration(); const s=reg && await reg.pushManager.getSubscription(); return s?'ativo':'inativo'; }catch(e){ return 'inativo'; }
+}
+async function desenharPainelNotif(){
+  const p=$('#notifPainel'); const st=await pushStatus();
+  const avisoPush = st==='inativo' ? `<div class="notif-push"><b>Receber no celular/computador</b><span>Avisos mesmo com o sistema fechado.</span><button class="btn pri sm" id="pushOn">Ativar notificações</button></div>`
+    : st==='ios-instalar' ? `<div class="notif-push"><b>Notificações no iPhone</b><span>Primeiro instale o app: Safari → Compartilhar → Adicionar à Tela de Início. Depois abra pelo ícone e ative aqui.</span></div>`
+    : st==='negado' ? `<div class="notif-push"><span>As notificações estão bloqueadas neste aparelho. Libere nas configurações do navegador para receber avisos.</span></div>` : '';
+  p.innerHTML = `<div class="notif-top"><b>Notificações</b>${naoLidas()?'<button class="link" id="nLerTodas">Marcar todas como lidas</button>':''}</div>${avisoPush}
+    <div class="notif-lista">${N.lista.length? N.lista.map(n=>`<button class="notif-item ${n.lida_em?'':'nova'}" data-n="${n.id}"><span class="dot"></span><div><b>${esc(n.titulo)}</b>${n.corpo?`<span>${esc(n.corpo)}</span>`:''}<small>${tempoRel(n.created_at)}</small></div></button>`).join('')
+      : '<div class="empty" style="padding:30px 10px">Nenhuma notificação ainda. Você será avisado aqui de cada movimentação.</div>'}</div>
+    ${st==='ativo'?'<div class="notif-rodape">🔔 Notificações ativas neste aparelho · <button class="link" id="pushOff">desativar</button></div>':''}`;
+  $('#pushOn') && ($('#pushOn').onclick=()=>busy($('#pushOn'),ativarPush));
+  $('#pushOff') && ($('#pushOff').onclick=desativarPush);
+  $('#nLerTodas') && ($('#nLerTodas').onclick=async()=>{ const ids=N.lista.filter(n=>!n.lida_em).map(n=>n.id); const agora=new Date().toISOString();
+    await sb.from('prem_notificacoes').update({lida_em:agora}).in('id',ids); N.lista.forEach(n=>{ if(!n.lida_em) n.lida_em=agora; }); atualizarSino(); desenharPainelNotif(); });
+  p.querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>abrirNotificacao(N.lista.find(n=>String(n.id)===b.dataset.n)));
+}
+async function abrirNotificacao(n){
+  if(!n) return; fecharPainelNotif();
+  if(!n.lida_em){ n.lida_em=new Date().toISOString(); atualizarSino(); sb.from('prem_notificacoes').update({lida_em:n.lida_em}).eq('id',n.id).then(()=>{}); }
+  await abrirDestino(n.tipo, n.ref_id);
+}
+async function abrirDestino(tipo, id){
+  if(!tipo) return;
+  if(tipo==='ordem'){ if(!S.ordens.find(o=>o.id===id)) await carregar(); ir(S.papel==='admin'?'ordens':'minhas'); if(S.ordens.find(o=>o.id===id)) detalhe(id); }
+  else if(tipo==='campanha'){ if(!S.camps.find(c=>c.id===id)) await carregar(); S.campFiltro=''; ir('campanhas'); if(S.camps.find(c=>c.id===id)) detalheCampanha(id); }
+  else if(tipo==='contrato'){ ir('contrato'); }
+}
+function b64ToU8(s){ const p='='.repeat((4-s.length%4)%4); const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...b].map(c=>c.charCodeAt(0))); }
+async function ativarPush(){
+  const perm=await Notification.requestPermission(); if(perm!=='granted') throw new Error('Permissão de notificação não concedida.');
+  const reg=await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64ToU8(VAPID_PUBLIC)});
+  const j=sub.toJSON();
+  const {error}=await sb.from('prem_push_subs').upsert({endpoint:j.endpoint, user_id:S.user.id, p256dh:j.keys.p256dh, auth:j.keys.auth, user_agent:navigator.userAgent.slice(0,300)});
+  if(error) throw error; toast('Notificações ativadas neste aparelho.'); desenharPainelNotif();
+}
+async function desativarPush(){ try{ const reg=await navigator.serviceWorker.getRegistration(); const s=reg&&await reg.pushManager.getSubscription();
+  if(s){ await sb.from('prem_push_subs').delete().eq('endpoint',s.endpoint); await s.unsubscribe(); } }catch(e){} toast('Notificações desativadas neste aparelho.'); desenharPainelNotif(); }
+// abrir pelo clique na notificação do celular (#ordem-<id> / #campanha-<id>)
+function abrirPeloHash(){ const m=(location.hash||'').match(/^#(ordem|campanha|contrato)-([0-9a-f-]{36})$/); if(!m) return; history.replaceState(null,'',location.pathname+location.search); abrirDestino(m[1], m[2]); }
+if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e=>{ if(e.data && e.data.tipo==='abrir'){ const m=String(e.data.url||'').match(/#(ordem|campanha|contrato)-([0-9a-f-]{36})$/); if(m && S.papel) abrirDestino(m[1],m[2]); } });
 
 // ================= CLIENTE: MINHAS ORDENS =================
 function vMinhas(){
