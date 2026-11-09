@@ -29,7 +29,7 @@ button,input,select,textarea{font:inherit}
 .hidden{display:none!important}
 /* layout */
 header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-.bar{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:12px 20px}
+.bar{max-width:1320px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:12px 20px}
 .logo{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
 .logo i{width:28px;height:28px;border-radius:8px;background:var(--brand);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:14px}
 nav{display:flex;gap:4px;margin-left:12px}
@@ -46,7 +46,7 @@ h2{font-size:15px;margin:0 0 12px}
 .kpi .l{color:var(--muted);font-size:12px;font-weight:500}
 .kpi .v{font-size:22px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
 .kpi .s{color:var(--muted);font-size:12px;margin-top:4px}
-@media(max-width:860px){.kpis{grid-template-columns:repeat(2,1fr)} .bar{flex-wrap:wrap} nav{order:3;width:100%;margin-left:0;overflow-x:auto;flex-wrap:nowrap} nav button{white-space:nowrap}}
+@media(max-width:860px){.kpis{grid-template-columns:repeat(2,1fr)}}
 /* buttons */
 .btn{border:1px solid var(--line);background:#fff;padding:9px 14px;border-radius:8px;cursor:pointer;font-weight:500;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
 .btn:hover{background:#f9fafb}
@@ -113,7 +113,19 @@ textarea{min-height:70px;resize:vertical}
 nav{overflow-x:auto;scrollbar-width:none} nav::-webkit-scrollbar{display:none}
 nav button{white-space:nowrap;padding:8px 10px}
 .who{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:1420px){.who{display:none}}
+/* o e-mail do usuário fica dentro do menu Mais */
+.who{display:none}
+/* menu que se ajusta à largura */
+nav{flex:1 1 auto;min-width:0;overflow:hidden}
+.bar > .spacer{flex:0 0 0}
+.nav-mais .car{font-size:10px;margin-left:2px}
+nav .sh{display:none}
+.nav-menu{position:fixed;z-index:40;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(16,24,40,.16);padding:6px;min-width:220px;max-width:280px}
+.nav-menu button{display:block;width:100%;text-align:left;background:none;border:0;padding:10px 12px;border-radius:8px;font-weight:500;color:var(--ink,#101828);cursor:pointer;font-size:14px}
+.nav-menu button:hover{background:var(--bg,#f4f5f7)}
+.nav-menu button.on{background:var(--brand-2);color:var(--brand)}
+.nav-menu .nm-quem{padding:8px 12px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-menu .nm-sair{color:var(--bad);border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:4px}
 /* ===== celular ===== */
 input,select,textarea{font-size:16px}
 header{padding-top:env(safe-area-inset-top)}
@@ -124,8 +136,14 @@ header{padding-top:env(safe-area-inset-top)}
   .who{display:none}
   nav{position:fixed;left:0;right:0;bottom:0;z-index:15;margin:0;background:#fff;border-top:1px solid var(--line);
       display:flex;overflow-x:auto;gap:2px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(16,24,40,.06)}
-  nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px;font-size:13px}
+  nav button{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:10px 6px;font-size:12.5px}
+  nav{overflow:hidden!important}
+  nav .lg{display:none} nav .sh{display:inline}
+  nav .nav-mais{flex:0 0 auto;padding:10px 8px} nav .nav-mais .car{display:none}
   nav:empty{display:none}
+  .nav-menu{left:8px!important;right:8px;top:auto!important;max-width:none;bottom:calc(64px + env(safe-area-inset-bottom));border-radius:14px}
+  .nav-menu button{padding:13px 14px;font-size:15px}
+  .btn-sair{display:none}
   main{padding:16px 12px calc(90px + env(safe-area-inset-bottom))}
   h1{font-size:19px}
   .card{padding:14px;border-radius:12px}
@@ -221,8 +239,8 @@ header{padding-top:env(safe-area-inset-top)}
     <nav id="nav"></nav>
     <div class="spacer"></div>
     <span class="who" id="who"></span>
-    <button class="btn sm" onclick="sair()">Sair</button>
-  </div></header>
+    <button class="btn sm btn-sair" onclick="sair()">Sair</button>
+  </div><div id="navMenu" class="nav-menu hidden" role="menu"></div></header>
   <main id="main"></main>
 </div>
 
@@ -368,7 +386,7 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['contrato','Contrato'],['equipe','Equipe'],['ajuda','Ajuda']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['campanhas','Campanhas'],['clientes','Clientes'],['faturamento','Faturamento'],['favorecidos','Favorecidos'],['nova','Nova ordem'],['contrato','Contrato'],['equipe','Equipe'],['ajuda','Ajuda']]);
     await carregar(); ir(S.tab||'painel'); iniciarNotificacoes(); abrirPeloHash();
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
@@ -380,12 +398,58 @@ async function iniciar(){
   }
 }
 function montarNav(items){
-  $('#nav').innerHTML = items.map(([k,l])=>`<button data-tab="${k}">${l}</button>`).join('');
-  $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>ir(b.dataset.tab));
+  S.navItems = items;
+  const curto={'Minhas ordens':'Ordens','Nova ordem':'+ Nova','Favorecidos':'Favorec.','Faturamento':'Faturam.'};
+  $('#nav').innerHTML = items.map(([k,l])=>`<button data-tab="${k}" title="${l}"><span class="lg">${l}</span><span class="sh">${curto[l]||l}</span></button>`).join('')
+    + `<button class="nav-mais" id="navMais" aria-haspopup="true">Mais <span class="car">▾</span></button>`;
+  $('#nav').querySelectorAll('button[data-tab]').forEach(b=>b.onclick=()=>{ fecharMenuNav(); ir(b.dataset.tab); });
+  $('#navMais').onclick=(e)=>{ e.stopPropagation(); $('#navMenu').classList.contains('hidden')?abrirMenuNav():fecharMenuNav(); };
+  ajustarNav();
 }
+// mostra no menu só o que cabe; o resto vai para "Mais"
+function ajustarNav(){
+  const nav=$('#nav'); if(!nav||!S.navItems) return;
+  const bts=[...nav.querySelectorAll('button[data-tab]')], mais=$('#navMais');
+  bts.forEach(b=>b.style.display=''); mais.style.display='none';
+  let ocultos=[];
+  const cel=matchMedia('(max-width:700px)').matches;
+  if(cel){ ocultos=bts.slice(4); }
+  else if(nav.scrollWidth>nav.clientWidth+1){
+    mais.style.display='';
+    for(let i=bts.length-1;i>=0 && nav.scrollWidth>nav.clientWidth+1;i--){ bts[i].style.display='none'; ocultos.unshift(bts[i]); }
+  }
+  ocultos.forEach(b=>b.style.display='none');
+  mais.style.display = (ocultos.length||cel)?'':'none';
+  S.navOcultos = ocultos.map(b=>b.dataset.tab);
+  marcarNav();
+}
+function marcarNav(){
+  const nav=$('#nav'); if(!nav) return;
+  nav.querySelectorAll('button[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
+  const m=$('#navMais'); if(m) m.classList.toggle('on',(S.navOcultos||[]).includes(S.tab));
+}
+function abrirMenuNav(){
+  const menu=$('#navMenu'), itens=(S.navItems||[]).filter(([k])=>(S.navOcultos||[]).includes(k));
+  menu.innerHTML = `<div class="nm-quem">${esc(S.user?.email||'')}${S.papel==='admin'?' · admin':''}</div>`
+    + itens.map(([k,l])=>`<button data-tab="${k}" class="${k===S.tab?'on':''}">${l}</button>`).join('')
+    + `<button class="nm-sair" onclick="sair()">Sair</button>`;
+  menu.querySelectorAll('button[data-tab]').forEach(b=>b.onclick=()=>{ fecharMenuNav(); ir(b.dataset.tab); });
+  const r=$('#navMais').getBoundingClientRect();
+  if(!matchMedia('(max-width:700px)').matches){ menu.style.top=(r.bottom+6)+'px'; menu.style.left=Math.max(8,Math.min(r.left, innerWidth-menu.offsetWidth-8, innerWidth-248))+'px'; }
+  else { menu.style.top=''; menu.style.left=''; }
+  menu.classList.remove('hidden'); $('#navMais').setAttribute('aria-expanded','true');
+}
+function fecharMenuNav(){ const m=$('#navMenu'); if(m) m.classList.add('hidden'); const b=$('#navMais'); if(b) b.setAttribute('aria-expanded','false'); }
+document.addEventListener('click',e=>{ const m=$('#navMenu'); if(m && !m.classList.contains('hidden') && !m.contains(e.target)) fecharMenuNav(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') fecharMenuNav(); });
+let _tNav, _wNav=0; addEventListener('resize',()=>fecharMenuNav());
+// reajusta sempre que o espaço do menu muda (tela, sino, nome do usuário, fontes)
+if(window.ResizeObserver) new ResizeObserver(()=>{ const w=$('#nav')?.clientWidth||0; if(w===_wNav) return; _wNav=w; clearTimeout(_tNav); _tNav=setTimeout(ajustarNav,60); }).observe(document.getElementById('nav'));
+else addEventListener('resize',()=>{ clearTimeout(_tNav); _tNav=setTimeout(ajustarNav,120); });
+if(document.fonts) document.fonts.ready.then(()=>ajustarNav());
 function ir(tab){
-  S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, ajuda:vAjuda, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='minhas')); verContratoAssinado(S.clienteId); } }}[tab])();
+  S.tab=tab; marcarNav();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, ajuda:vAjuda, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); marcarNav(); verContratoAssinado(S.clienteId); } }}[tab])();
 }
 
 // ================= DADOS =================
