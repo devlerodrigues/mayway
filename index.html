@@ -80,8 +80,8 @@ textarea{min-height:70px;resize:vertical}
 .link{background:none;border:0;color:var(--brand);cursor:pointer;padding:0;font-weight:500}
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(16,24,40,.45);display:grid;place-items:center;padding:20px;z-index:20}
-.modal .card{width:100%;max-width:720px;max-height:92vh;overflow:auto;position:relative}
-.modal .x{position:absolute;right:14px;top:12px;background:none;border:0;font-size:22px;cursor:pointer;color:var(--muted)}
+.modal .card{width:100%;max-width:860px;max-height:92vh;overflow:auto;position:relative}
+.modal .x{position:absolute;right:10px;top:8px;background:#f2f4f7;border:0;width:34px;height:34px;border-radius:50%;font-size:22px;line-height:1;cursor:pointer;color:var(--ink);z-index:2}
 .dl{display:grid;grid-template-columns:160px 1fr;gap:8px 14px;margin:0 0 16px}
 .dl dt{color:var(--muted);font-size:13px} .dl dd{margin:0}
 .steps{display:flex;gap:6px;margin:6px 0 18px}
@@ -115,7 +115,7 @@ textarea{min-height:70px;resize:vertical}
       <button class="link" data-mode="signup">Primeiro acesso</button>
       <button class="link" data-mode="reset">Esqueci a senha</button>
     </p>
-    <p class="small" style="margin:12px 0 0;text-align:center"><a href="videos/manual-cliente.mp4" target="_blank" style="color:var(--brand)">▶ Vídeo: como usar o sistema</a></p>
+    <p class="small" style="margin:12px 0 0;text-align:center"><button type="button" class="link" onclick="abrirVideo('videos/manual-cliente.mp4','Como usar o sistema')">▶ Vídeo: como usar o sistema</button></p>
   </div>
 </section>
 
@@ -180,7 +180,9 @@ function toast(m, err){ const t=document.createElement('div'); t.className='toas
 function parseValor(s){ s=String(s).trim(); if(!s) return 0; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); return Number(s)||0; }
 function show(id){ ['vLogin','vNoLink','vApp'].forEach(v=>$('#'+v).classList.toggle('hidden', v!==id)); }
 function abrirModal(html){ $('#modalBody').innerHTML=html; $('#modal').classList.remove('hidden'); }
-function fecharModal(){ $('#modal').classList.add('hidden'); }
+function fecharModal(){ $('#modal').querySelectorAll('video').forEach(v=>v.pause()); $('#modal').classList.add('hidden'); $('#modalBody').innerHTML=''; }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('#modal').classList.contains('hidden')) fecharModal(); });
+function abrirVideo(src, titulo){ abrirModal(`<h2 style="margin:0 30px 12px 0">${esc(titulo)}</h2><video src="${src}" controls autoplay playsinline style="width:100%;border-radius:10px;background:#000"></video><div style="text-align:right;margin-top:12px"><button class="btn pri" onclick="fecharModal()">Fechar vídeo</button></div>`); }
 $('#modal').addEventListener('click', e=>{ if(e.target.id==='modal') fecharModal(); });
 async function busy(btn, fn){ btn.disabled=true; const t=btn.textContent; btn.textContent='Aguarde…'; try{ await fn(); } catch(e){ console.error(e); toast(e.message||String(e), true); } finally{ btn.disabled=false; btn.textContent=t; } }
 
