@@ -155,7 +155,16 @@ const ST = {
   concluida:    {l:'Concluída', c:'Concluída', step:4},
   cancelada:    {l:'Cancelada', c:'Cancelada', step:0},
 };
-const S = { user:null, papel:null, clienteId:null, cliente:null, clientes:[], ordens:[], tab:null, filtro:{status:'acao', cliente:'', q:''} };
+const S = { user:null, papel:null, clienteId:null, cliente:null, clientes:[], ordens:[], favs:[], custoTed:9, favCli:'', tab:null, filtro:{status:'acao', cliente:'', q:''} };
+const PIX_TIPOS = {cpf:'CPF',cnpj:'CNPJ',email:'E-mail',telefone:'Telefone',aleatoria:'Chave aleatória'};
+const soDig = s => String(s||'').replace(/\D/g,'');
+const fmtDoc = s => { s=soDig(s); return s.length===11 ? s.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4') : s.length===14 ? s.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5') : s; };
+function cpfValido(c){ c=soDig(c); if(c.length!==11||/^(\d)\1+$/.test(c)) return false;
+  for(let t=9;t<11;t++){ let s=0; for(let i=0;i<t;i++) s+=c[i]*(t+1-i); if(((s*10)%11)%10!=c[t]) return false; } return true; }
+function cnpjValido(c){ c=soDig(c); if(c.length!==14||/^(\d)\1+$/.test(c)) return false;
+  const calc=n=>{ let s=0,p=n-7; for(let i=0;i<n;i++){ s+=c[i]*p--; if(p<2) p=9; } const r=s%11; return r<2?0:11-r; };
+  return calc(12)==c[12] && calc(13)==c[13]; }
+const favDados = f => f.forma_pagamento==='pix' ? `PIX · ${PIX_TIPOS[f.pix_tipo]||'Chave'}: ${f.pix_chave}` : `TED · Banco ${f.banco} · Ag ${f.agencia} · Conta ${f.conta}${f.tipo_conta?' ('+(f.tipo_conta==='poupanca'?'poupança':'corrente')+')':''}`;
 
 // ================= UTIL =================
 const $ = s => document.querySelector(s);
@@ -245,12 +254,12 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['clientes','Clientes'],['faturamento','Faturamento']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento']]);
     await carregar(); ir(S.tab||'painel');
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
     S.cliente = c;
-    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem']]);
+    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['favorecidos','Favorecidos']]);
     await carregar(); ir(S.tab||'minhas');
   }
 }
@@ -260,18 +269,19 @@ function montarNav(items){
 }
 function ir(tab){
   S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:()=>vNova()}[tab])();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos}[tab])();
 }
 
 // ================= DADOS =================
 async function carregar(){
   const q = sb.from('prem_ordens').select('*, prem_clientes(nome)').order('created_at',{ascending:false}).limit(1000);
-  const [o, c] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}) ]);
+  const [o, c, f, cfg] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}),
+    sb.from('prem_favorecidos').select('*').eq('ativo',true).order('nome'), sb.from('prem_config').select('custo_ted').single() ]);
   if(o.error) toast(o.error.message,true);
-  S.ordens = o.data||[]; S.clientes = c.data||[];
+  S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data) S.custoTed = Number(cfg.data.custo_ted);
 }
 async function recarregar(){ await carregar(); ir(S.tab); }
-setInterval(()=>{ if(S.papel && $('#modal').classList.contains('hidden') && !['nova'].includes(S.tab)) recarregar(); }, 60000);
+setInterval(()=>{ if(S.papel && $('#modal').classList.contains('hidden') && !['nova','favorecidos'].includes(S.tab)) recarregar(); }, 60000);
 
 // ================= ADMIN: PAINEL =================
 function vPainel(){
@@ -306,7 +316,7 @@ function vOrdens(){
     if(f.q){ const t=(o.descricao+' '+o.favorecido_nome+' '+o.numero+' '+(o.numero_nota||'')+' '+(o.prem_clientes?.nome||'')).toLowerCase(); if(!t.includes(f.q.toLowerCase())) return false; }
     return true; });
   $('#main').innerHTML = `
-    <div class="toolbar"><h1 style="margin:0">Ordens</h1><div class="spacer"></div><button class="btn pri" onclick="vNova(true)">+ Nova ordem</button></div>
+    <div class="toolbar"><h1 style="margin:0">Ordens</h1><div class="spacer"></div><button class="btn pri" onclick="ir('nova')">+ Nova ordem</button></div>
     <div class="card">
       <div class="toolbar">
         <select id="fSt"><option value="acao">Precisam de mim</option><option value="">Todos os status</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}">${v.l}</option>`).join('')}</select>
@@ -341,7 +351,12 @@ function ligarLinhas(){ document.querySelectorAll('tr.click').forEach(tr=>tr.onc
 async function detalhe(id){
   const o = S.ordens.find(x=>x.id===id); if(!o) return;
   const admin = S.papel==='admin';
-  const { data:hist } = await sb.from('prem_historico').select('*').eq('ordem_id',id).order('id');
+  const [{ data:hist }, { data:itens }] = await Promise.all([
+    sb.from('prem_historico').select('*').eq('ordem_id',id).order('id'),
+    sb.from('prem_ordem_itens').select('*').eq('ordem_id',id).order('created_at') ]);
+  const tabItens = (itens&&itens.length) ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>CPF</th><th>Forma / dados</th><th class="num">Valor</th></tr></thead><tbody>
+    ${itens.map(i=>`<tr><td><b>${esc(i.nome)}</b></td><td>${esc(fmtDoc(i.cpf))}</td><td class="small">${esc(i.dados_pagamento)}${Number(i.custo_transferencia)?` <span class="muted">(+${brl(i.custo_transferencia)} TED)</span>`:''}</td><td class="num">${brl(i.valor)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<p>${esc(o.favorecido_nome||'—')} <span class="muted">${esc(o.dados_pagamento||'')}</span></p>`;
   const arq = [['anexo_ordem','Ordem / boleto'],['anexo_nota','Nota fiscal'],['anexo_comprovante_cliente','Comprovante do cliente'],['anexo_comprovante_pagamento','Comprovante do repasse']]
     .filter(([k])=>o[k]).map(([k,l])=>`<button class="btn sm" data-file="${esc(o[k])}">📎 ${l}</button>`).join('') || '<span class="muted small">Nenhum anexo ainda.</span>';
   const step = ST[o.status].step;
@@ -358,9 +373,8 @@ async function detalhe(id){
       <button class="btn pri" id="aBtn">Enviar comprovante</button></div>`;
   if(admin && o.status==='nota_emitida') acao = `<div class="action"><p class="muted" style="margin:0 0 10px">Aguardando o cliente pagar a nota. Se ele te mandou o comprovante por fora, você pode anexar aqui.</p>
       <input id="aFile" type="file" accept=".pdf,image/*" style="margin-bottom:10px"><button class="btn" id="aBtn">Anexar comprovante do cliente</button></div>`;
-  if(admin && o.status==='pago_cliente') acao = `<div class="action"><h2>Pagar o favorecido</h2>
-      <dl class="dl" style="margin-bottom:12px"><dt>Favorecido</dt><dd><b>${esc(o.favorecido_nome)}</b> ${esc(o.favorecido_documento||'')}</dd>
-      <dt>Dados de pagamento</dt><dd style="white-space:pre-wrap">${esc(o.dados_pagamento||'—')}</dd><dt>Valor a pagar</dt><dd><b>${brl(o.valor_pagamento)}</b></dd></dl>
+  if(admin && o.status==='pago_cliente') acao = `<div class="action"><h2>Pagar os favorecidos</h2>
+      <p class="muted" style="margin-top:0">Faça os pagamentos da lista acima (total <b>${brl(o.valor_pagamento)}</b>) e anexe o(s) comprovante(s) em um único arquivo.</p>
       <div class="f"><label>Comprovante do pagamento</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
       <button class="btn pri" id="aBtn">Concluir ordem</button></div>`;
   const podeCancelar = o.status!=='concluida' && o.status!=='cancelada' && (admin || o.status==='enviada');
@@ -371,15 +385,15 @@ async function detalhe(id){
     ${step?`<div class="steps">${[1,2,3,4].map(i=>`<div class="${i<=step?'on':''}"></div>`).join('')}</div>`:'<div style="height:14px"></div>'}
     <dl class="dl">
       ${admin?`<dt>Cliente</dt><dd>${esc(o.prem_clientes?.nome)}</dd>`:''}
-      <dt>Favorecido</dt><dd>${esc(o.favorecido_nome)} <span class="muted">${esc(o.favorecido_documento||'')}</span></dd>
-      <dt>Dados de pagamento</dt><dd style="white-space:pre-wrap">${esc(o.dados_pagamento||'—')}</dd>
       <dt>Vencimento</dt><dd>${dIso(o.vencimento)}</dd>
-      <dt>Valor do pagamento</dt><dd>${brl(o.valor_pagamento)}</dd>
-      ${admin?`<dt>Sua taxa</dt><dd>${brl(o.valor_taxa)} <span class="muted">(${pct(o.taxa_percentual)})</span></dd>`:''}
+      <dt>Total dos pagamentos</dt><dd>${brl(o.valor_pagamento)}</dd>
+      <dt>${admin?'Sua taxa':'Taxa de serviço'}</dt><dd>${brl(o.valor_taxa)} <span class="muted">(${pct(o.taxa_percentual)})</span></dd>
+      ${Number(o.custo_transferencia)?`<dt>Custo de TED</dt><dd>${brl(o.custo_transferencia)}</dd>`:''}
       <dt>Valor da nota</dt><dd><b>${brl(o.valor_nota)}</b>${o.numero_nota?` <span class="muted">· NF ${esc(o.numero_nota)}</span>`:''}</dd>
       ${o.observacao?`<dt>Observação</dt><dd style="white-space:pre-wrap">${esc(o.observacao)}</dd>`:''}
       ${o.motivo_cancelamento?`<dt>Motivo do cancelamento</dt><dd>${esc(o.motivo_cancelamento)}</dd>`:''}
     </dl>
+    <h2>Favorecidos (${(itens||[]).length||1})</h2>${tabItens}<div style="height:16px"></div>
     <h2>Arquivos</h2><div class="files">${arq}</div>
     ${acao}
     <h2 style="margin-top:20px">Histórico</h2>
@@ -390,7 +404,8 @@ async function detalhe(id){
   const btn=$('#aBtn');
   if(admin && o.status==='enviada'){
     const upd=()=>{ const t=parseValor($('#aTaxa').value), tx=Math.round(o.valor_pagamento*t)/100;
-      $('#aCalc').innerHTML=`<div>Pagamento<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div><div>Valor da nota<b>${brl(Number(o.valor_pagamento)+tx)}</b></div>`; };
+      const ted=Number(o.custo_transferencia||0);
+      $('#aCalc').innerHTML=`<div>Pagamentos<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div>${ted?`<div>Custo TED<b>${brl(ted)}</b></div>`:''}<div>Valor da nota<b>${brl(Number(o.valor_pagamento)+tx+ted)}</b></div>`; };
     $('#aTaxa').oninput=upd; upd();
     btn.onclick=()=>busy(btn,async()=>{
       const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o arquivo da nota.');
@@ -419,42 +434,131 @@ async function detalhe(id){
 }
 
 // ================= NOVA ORDEM (cliente ou admin) =================
-function vNova(emModal){
+let NOVA = { itens:[] };
+function vNova(){
   const admin=S.papel==='admin';
-  const html = `
+  if(!NOVA.itens.length) NOVA.itens=[{fav:'',valor:''}];
+  $('#main').innerHTML = `<div class="card" style="max-width:860px">
     <h1>Nova ordem de pagamento</h1>
     <form id="nForm">
       ${admin?`<div class="f"><label>Cliente</label><select id="nCli" required><option value="">Selecione…</option>${S.clientes.filter(c=>c.ativo).map(c=>`<option value="${c.id}">${esc(c.nome)} (${pct(c.taxa_percentual)})</option>`).join('')}</select></div>`:''}
-      <div class="f"><label>Descrição</label><input id="nDesc" required placeholder="Ex.: Premiação equipe de vendas – outubro"></div>
       <div class="row">
-        <div class="f"><label>Favorecido (quem vai receber)</label><input id="nFav" required></div>
-        <div class="f"><label>CPF/CNPJ do favorecido</label><input id="nFavDoc"></div>
+        <div class="f"><label>Descrição</label><input id="nDesc" required placeholder="Ex.: Premiação equipe de vendas – novembro"></div>
+        <div class="f"><label>Data para pagamento</label><input id="nVenc" type="date"></div>
       </div>
-      <div class="f"><label>Dados para pagamento (PIX, banco/agência/conta ou linha digitável)</label><textarea id="nDados" required></textarea></div>
-      <div class="row">
-        <div class="f"><label>Valor a pagar (R$)</label><input id="nValor" required inputmode="decimal" placeholder="0,00"></div>
-        <div class="f"><label>Vencimento</label><input id="nVenc" type="date"></div>
-      </div>
+      <div class="toolbar" style="margin:6px 0 8px"><h2 style="margin:0">Favorecidos</h2><div class="spacer"></div>
+        <button type="button" class="btn sm" id="nNovoFav">+ Cadastrar favorecido</button></div>
+      <div id="nItens"></div>
+      <button type="button" class="btn sm" id="nAdd" style="margin:4px 0 16px">+ Adicionar favorecido à ordem</button>
       <div class="calc" id="nCalc"></div>
-      <div class="f"><label>Anexo (boleto, planilha, ordem) – opcional</label><input id="nFile" type="file"></div>
+      <div class="f"><label>Anexo (planilha, documento) – opcional</label><input id="nFile" type="file"></div>
       <div class="f"><label>Observação</label><textarea id="nObs"></textarea></div>
       <button class="btn pri" id="nBtn">Enviar ordem</button>
-    </form>`;
-  if(emModal) abrirModal(html); else $('#main').innerHTML = `<div class="card" style="max-width:720px">${html}</div>`;
-  const taxa=()=> admin ? Number(S.clientes.find(c=>c.id===$('#nCli').value)?.taxa_percentual||0) : Number(S.cliente?.taxa_percentual||0);
-  const upd=()=>{ const v=parseValor($('#nValor').value), t=taxa(), tx=Math.round(v*t)/100;
-    $('#nCalc').innerHTML=`<div>Valor a pagar<b>${brl(v)}</b></div><div>Taxa de serviço (${pct(t)})<b>${brl(tx)}</b></div><div>Valor da nota<b>${brl(v+tx)}</b></div>`; };
-  $('#nValor').oninput=upd; if(admin) $('#nCli').onchange=upd; upd();
+    </form></div>`;
+  if(admin){ $('#nCli').value = S.favCli||''; $('#nCli').onchange=()=>{ S.favCli=$('#nCli').value; NOVA.itens=[{fav:'',valor:''}]; desenharItens(); }; }
+  $('#nAdd').onclick=()=>{ NOVA.itens.push({fav:'',valor:''}); desenharItens(); };
+  $('#nNovoFav').onclick=()=>{ const c=cliNova(); if(admin&&!c) return toast('Selecione o cliente primeiro.',true);
+    formFav(null, c, fav=>{ const vazio=NOVA.itens.find(i=>!i.fav); if(vazio) vazio.fav=fav.id; else NOVA.itens.push({fav:fav.id,valor:''}); desenharItens(); }); };
+  desenharItens();
   $('#nForm').onsubmit=e=>{ e.preventDefault(); busy($('#nBtn'),async()=>{
-    const cliente_id = admin ? $('#nCli').value : S.clienteId;
-    const valor=parseValor($('#nValor').value); if(valor<=0) throw new Error('Informe o valor a pagar.');
+    const cliente_id=cliNova(); if(!cliente_id) throw new Error('Selecione o cliente.');
+    const itens=NOVA.itens.filter(i=>i.fav||parseValor(i.valor));
+    if(!itens.length) throw new Error('Adicione ao menos um favorecido.');
+    for(const i of itens){ if(!i.fav) throw new Error('Escolha o favorecido em todas as linhas.'); if(parseValor(i.valor)<=0) throw new Error('Informe o valor de todos os favorecidos.'); }
     const id=crypto.randomUUID();
     const anexo=await upload(cliente_id,id,'ordem',$('#nFile').files[0]);
-    const {error}=await sb.from('prem_ordens').insert({ id, cliente_id, descricao:$('#nDesc').value.trim(), favorecido_nome:$('#nFav').value.trim(),
-      favorecido_documento:$('#nFavDoc').value.trim()||null, dados_pagamento:$('#nDados').value.trim(), valor_pagamento:valor,
-      vencimento:$('#nVenc').value||null, observacao:$('#nObs').value.trim()||null, anexo_ordem:anexo });
+    const {error}=await sb.rpc('prem_criar_ordem',{ p_id:id, p_cliente:cliente_id, p_descricao:$('#nDesc').value.trim(),
+      p_vencimento:$('#nVenc').value||null, p_observacao:$('#nObs').value.trim()||null, p_anexo:anexo,
+      p_itens:itens.map(i=>({favorecido_id:i.fav, valor:parseValor(i.valor)})) });
     if(error) throw error;
-    toast('Ordem enviada!'); if(emModal) fecharModal(); await carregar(); ir(admin?'ordens':'minhas');
+    NOVA.itens=[]; toast('Ordem enviada!'); await carregar(); ir(S.papel==='admin'?'ordens':'minhas');
+  });};
+}
+function cliNova(){ return S.papel==='admin' ? ($('#nCli')?.value||'') : S.clienteId; }
+function favsDe(cli){ return S.favs.filter(f=>f.cliente_id===cli); }
+function desenharItens(){
+  const cli=cliNova(), lista=favsDe(cli);
+  $('#nItens').innerHTML = !cli ? `<p class="muted">Selecione o cliente para ver os favorecidos.</p>` :
+    !lista.length ? `<p class="muted">Nenhum favorecido cadastrado ainda. Clique em <b>+ Cadastrar favorecido</b>.</p>` :
+    NOVA.itens.map((it,ix)=>{ const f=lista.find(x=>x.id===it.fav);
+      return `<div class="row" style="grid-template-columns:2fr 1fr auto;align-items:end;margin-bottom:8px">
+        <div><select data-fav="${ix}"><option value="">Escolha o favorecido…</option>${lista.map(x=>`<option value="${x.id}" ${x.id===it.fav?'selected':''}>${esc(x.nome)} · ${esc(fmtDoc(x.cpf))} · ${x.forma_pagamento==='pix'?'PIX':'TED'}</option>`).join('')}</select>
+          ${f?`<div class="muted small" style="margin-top:4px">${esc(favDados(f))}${f.forma_pagamento==='ted'?` · <b>+${brl(S.custoTed)} de TED</b>`:''}</div>`:''}</div>
+        <div><input data-val="${ix}" inputmode="decimal" placeholder="Valor R$" value="${esc(it.valor)}"></div>
+        <button type="button" class="btn sm danger" data-rm="${ix}" title="Remover">✕</button></div>`; }).join('');
+  document.querySelectorAll('[data-fav]').forEach(s=>s.onchange=()=>{ NOVA.itens[s.dataset.fav].fav=s.value; desenharItens(); });
+  document.querySelectorAll('[data-val]').forEach(s=>s.oninput=()=>{ NOVA.itens[s.dataset.val].valor=s.value; calcNova(); });
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ NOVA.itens.splice(b.dataset.rm,1); if(!NOVA.itens.length) NOVA.itens.push({fav:'',valor:''}); desenharItens(); });
+  calcNova();
+}
+function calcNova(){
+  const cli=cliNova(), t = S.papel==='admin' ? Number(S.clientes.find(c=>c.id===cli)?.taxa_percentual||0) : Number(S.cliente?.taxa_percentual||0);
+  let v=0, teds=0; NOVA.itens.forEach(i=>{ const val=parseValor(i.valor); v+=val; const f=S.favs.find(x=>x.id===i.fav); if(f&&f.forma_pagamento==='ted') teds++; });
+  const tx=Math.round(v*t)/100, ct=teds*S.custoTed;
+  $('#nCalc').innerHTML=`<div>Total a pagar<b>${brl(v)}</b></div><div>Taxa de serviço (${pct(t)})<b>${brl(tx)}</b></div>`+
+    `<div>Custo TED (${teds} × ${brl(S.custoTed)})<b>${brl(ct)}</b></div><div>Valor da nota<b>${brl(v+tx+ct)}</b></div>`;
+}
+
+// ================= FAVORECIDOS =================
+function vFavorecidos(){
+  const admin=S.papel==='admin', cli = admin ? S.favCli : S.clienteId;
+  const lista = admin && !cli ? S.favs : favsDe(cli);
+  const nomeCli = id => S.clientes.find(c=>c.id===id)?.nome||'';
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Favorecidos</h1><div class="spacer"></div>
+      ${admin?`<select id="fvCli" style="width:auto"><option value="">Todos os clientes</option>${S.clientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>`:''}
+      <button class="btn pri" id="fvNovo">+ Novo favorecido</button></div>
+    <p class="muted" style="margin-top:-6px">Preferência: <b>PIX</b> (sem custo). Pagamentos por <b>TED</b> têm custo de ${brl(S.custoTed)} por favorecido, somado à nota.</p>
+    <div class="card">${lista.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Nome</th>${admin&&!cli?'<th>Cliente</th>':''}<th>CPF</th><th>Forma</th><th>Dados de pagamento</th><th></th></tr></thead><tbody>
+      ${lista.map(f=>`<tr><td><b>${esc(f.nome)}</b></td>${admin&&!cli?`<td>${esc(nomeCli(f.cliente_id))}</td>`:''}<td>${esc(fmtDoc(f.cpf))}</td>
+        <td>${f.forma_pagamento==='pix'?'<span class="pill st-concluida">PIX</span>':'<span class="pill st-enviada">TED +'+brl(S.custoTed)+'</span>'}</td>
+        <td class="small">${esc(favDados(f).replace(/^(PIX|TED) · /,''))}</td>
+        <td class="num"><button class="btn sm" data-ed="${f.id}">Editar</button> <button class="btn sm danger" data-del="${f.id}">Remover</button></td></tr>`).join('')}
+      </tbody></table></div>`:`<div class="empty">Nenhum favorecido cadastrado. Cadastre quem vai receber os pagamentos.</div>`}</div>`;
+  if(admin){ $('#fvCli').value=cli||''; $('#fvCli').onchange=e=>{S.favCli=e.target.value; vFavorecidos();}; }
+  $('#fvNovo').onclick=()=>{ if(admin&&!S.favCli) return toast('Selecione o cliente no filtro primeiro.',true); formFav(null, cli, ()=>vFavorecidos()); };
+  document.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>{ const f=S.favs.find(x=>x.id===b.dataset.ed); formFav(f.id, f.cliente_id, ()=>vFavorecidos()); });
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const f=S.favs.find(x=>x.id===b.dataset.del);
+    abrirModal(`<h2>Remover ${esc(f.nome)}?</h2><p class="muted">Ele deixa de aparecer para novas ordens. Ordens antigas não mudam.</p>
+      <button class="btn danger" id="rmOk">Remover</button> <button class="btn" onclick="fecharModal()">Voltar</button>`);
+    $('#rmOk').onclick=()=>busy($('#rmOk'),async()=>{ const {error}=await sb.from('prem_favorecidos').update({ativo:false}).eq('id',f.id); if(error) throw error;
+      fecharModal(); await carregar(); vFavorecidos(); }); });
+}
+function formFav(id, clienteId, onSaved){
+  const f = S.favs.find(x=>x.id===id) || {forma_pagamento:'pix', pix_tipo:'cpf'};
+  abrirModal(`<h1>${id?'Editar favorecido':'Novo favorecido'}</h1>
+    <form id="fvForm">
+      <div class="row"><div class="f"><label>Nome completo</label><input id="fvNome" required value="${esc(f.nome||'')}"></div>
+      <div class="f"><label>CPF</label><input id="fvCpf" required inputmode="numeric" placeholder="000.000.000-00" value="${esc(fmtDoc(f.cpf||''))}"></div></div>
+      <div class="f"><label>Forma de pagamento</label>
+        <select id="fvForma"><option value="pix">PIX (preferencial, sem custo)</option><option value="ted">TED (custo de ${brl(S.custoTed)})</option></select></div>
+      <div id="fvPix" class="row"><div class="f"><label>Tipo de chave</label><select id="fvPixTipo">${Object.entries(PIX_TIPOS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+        <div class="f"><label>Chave PIX</label><input id="fvPixChave" value="${esc(f.pix_chave||'')}"></div></div>
+      <div id="fvTed"><div class="row"><div class="f"><label>Banco (nome ou código)</label><input id="fvBanco" value="${esc(f.banco||'')}"></div>
+        <div class="f"><label>Tipo de conta</label><select id="fvTipoConta"><option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select></div></div>
+        <div class="row"><div class="f"><label>Agência</label><input id="fvAg" value="${esc(f.agencia||'')}"></div>
+        <div class="f"><label>Conta com dígito</label><input id="fvConta" value="${esc(f.conta||'')}"></div></div></div>
+      <div id="fvMsg"></div>
+      <button class="btn pri" id="fvBtn">Salvar</button>
+    </form>`);
+  $('#fvForma').value=f.forma_pagamento; $('#fvPixTipo').value=f.pix_tipo||'cpf'; $('#fvTipoConta').value=f.tipo_conta||'corrente';
+  const alterna=()=>{ const pix=$('#fvForma').value==='pix'; $('#fvPix').classList.toggle('hidden',!pix); $('#fvTed').classList.toggle('hidden',pix); };
+  $('#fvForma').onchange=alterna; alterna();
+  $('#fvPixTipo').onchange=()=>{ if($('#fvPixTipo').value==='cpf' && !$('#fvPixChave').value) $('#fvPixChave').value=soDig($('#fvCpf').value); };
+  $('#fvForm').onsubmit=e=>{ e.preventDefault(); busy($('#fvBtn'),async()=>{
+    const cpf=soDig($('#fvCpf').value);
+    if(!(cpfValido(cpf)||cnpjValido(cpf))) throw new Error('CPF inválido. Confira os números.');
+    const forma=$('#fvForma').value;
+    const row={ nome:$('#fvNome').value.trim(), cpf, forma_pagamento:forma };
+    if(forma==='pix'){ row.pix_tipo=$('#fvPixTipo').value; row.pix_chave=$('#fvPixChave').value.trim() || (row.pix_tipo==='cpf'?cpf:'');
+      if(!row.pix_chave) throw new Error('Informe a chave PIX.'); }
+    else { row.banco=$('#fvBanco').value.trim(); row.agencia=$('#fvAg').value.trim(); row.conta=$('#fvConta').value.trim(); row.tipo_conta=$('#fvTipoConta').value;
+      if(!row.banco||!row.agencia||!row.conta) throw new Error('Preencha banco, agência e conta.'); }
+    let res;
+    if(id) res = await sb.from('prem_favorecidos').update(row).eq('id',id).select().single();
+    else { row.cliente_id=clienteId; res = await sb.from('prem_favorecidos').insert(row).select().single(); }
+    if(res.error) throw new Error(res.error.code==='23505'?'Já existe um favorecido com esse CPF.':res.error.message);
+    fecharModal(); toast('Favorecido salvo.'); await carregar(); onSaved && onSaved(res.data);
   });};
 }
 
