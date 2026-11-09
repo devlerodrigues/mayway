@@ -115,6 +115,7 @@ textarea{min-height:70px;resize:vertical}
       <button class="link" data-mode="signup">Primeiro acesso</button>
       <button class="link" data-mode="reset">Esqueci a senha</button>
     </p>
+    <p class="small" style="margin:12px 0 0;text-align:center"><a href="videos/manual-cliente.mp4" target="_blank" style="color:var(--brand)">▶ Vídeo: como usar o sistema</a></p>
   </div>
 </section>
 
@@ -254,14 +255,14 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['contrato','Contrato'],['equipe','Equipe']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['contrato','Contrato'],['equipe','Equipe'],['ajuda','Ajuda']]);
     await carregar(); ir(S.tab||'painel');
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
     S.cliente = c;
     const { data:cfgc } = await sb.from('prem_config').select('contrato_exigir').single();
     if(cfgc?.contrato_exigir && !c?.contrato_aceito_em){ $('#who').textContent = S.user.email; vContratoGate(); return; }
-    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['favorecidos','Favorecidos']].concat(c?.contrato_aceito_em?[['contrato','Contrato']]:[]));
+    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['favorecidos','Favorecidos']].concat(c?.contrato_aceito_em?[['contrato','Contrato']]:[]).concat([['ajuda','Ajuda']]));
     await carregar(); ir(S.tab||'minhas');
   }
 }
@@ -271,7 +272,7 @@ function montarNav(items){
 }
 function ir(tab){
   S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='minhas')); verContratoAssinado(S.clienteId); } }}[tab])();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, ajuda:vAjuda, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='minhas')); verContratoAssinado(S.clienteId); } }}[tab])();
 }
 
 // ================= DADOS =================
@@ -848,6 +849,40 @@ async function vContratoAdmin(){
     const cli=S.clientes[0]; if(!cli) throw new Error('Cadastre um cliente para pré-visualizar.');
     const {data,error}=await sb.rpc('prem_contrato_render',{p_cliente:cli.id,p_rep_nome:null,p_rep_cpf:null,p_endereco:null}); if(error) throw error;
     abrirModal(`<h1>Pré-visualização (com dados de ${esc(cli.nome)})</h1><div style="${CSS_CONTRATO};max-height:65vh">${mdHtml(data.texto)}</div>`); });
+}
+
+// ================= AJUDA / MANUAL =================
+const MANUAL_CLIENTE = [
+ ['Primeiro acesso', ['Abra o link do sistema e clique em <b>Primeiro acesso</b>.', 'Use o e-mail que você informou para a nossa equipe e crie uma senha (mínimo 6 caracteres).', 'Se o e-mail de confirmação não chegar, olhe o spam ou fale com a gente.', 'Esqueceu a senha? Clique em <b>Esqueci a senha</b> na tela de entrada.']],
+ ['Contrato', ['No primeiro acesso aparece o contrato de prestação de serviços.', 'Informe o endereço da empresa e o nome e CPF do representante legal e clique em <b>Gerar contrato com meus dados</b>.', 'Leia, marque que concorda e clique em <b>Assinar eletronicamente</b>. O sistema é liberado na hora.', 'O contrato assinado fica no menu <b>Contrato</b>.']],
+ ['Campanhas', ['Toda premiação precisa estar ligada a uma campanha de incentivo aprovada.', 'Menu <b>Campanhas</b> → <b>+ Nova campanha</b>.', 'Escolha a data de início: o fim pode ser de no máximo 3 meses depois.', 'Preencha participantes, objetivos, critérios de avaliação, critérios de premiação e formas de bonificação. Orçamento e logo são opcionais.', 'Aceite o regulamento e clique em <b>Enviar para análise</b>. Você é avisado quando for aprovada ou se precisar de ajustes.', 'Ordens são aceitas do início da campanha até 30 dias depois do fim.']],
+ ['Repetir campanha', ['15 dias antes do fim, a tela inicial pergunta se você quer repetir a campanha por mais 3 meses.', 'Clique em <b>Sim, repetir campanha</b>: ela é criada com o mesmo briefing e já aprovada, começando no dia seguinte ao fim da atual.', 'Quer mudar metas ou critérios? Clique em <b>Não, cadastrar uma nova</b>.']],
+ ['Favorecidos', ['Menu <b>Favorecidos</b> → <b>+ Novo favorecido</b>.', 'Informe nome completo e CPF (o sistema confere se o CPF é válido).', '<b>PIX</b> (recomendado, sem custo): escolha o tipo de chave e informe a chave.', '<b>TED</b>: informe banco, agência, conta e tipo de conta. Cada TED soma R$ 9,00 na nota.', 'Para tirar alguém da lista, clique em <b>Remover</b>. Ordens antigas não mudam.']],
+ ['Nova ordem de pagamento', ['Menu <b>Nova ordem</b>.', 'Escolha a campanha (só aparecem campanhas aprovadas e no prazo).', 'Descreva a premiação e, se quiser, a data para pagamento.', 'Escolha os favorecidos e o valor de cada um. Dá para cadastrar um favorecido novo sem sair da tela.', 'Confira o quadro: total a pagar + taxa de serviço + custo de TED = valor da nota. Clique em <b>Enviar ordem</b>.']],
+ ['Pagar a nota', ['Quando a nota fiscal estiver pronta, a ordem fica como <b>Pagar a nota</b> e aparece um aviso na tela inicial.', 'Abra a ordem, baixe a nota em <b>Arquivos</b> e faça o pagamento do valor da nota.', 'Anexe o comprovante e clique em <b>Enviar comprovante</b>.', 'Depois que o pagamento compensa, pagamos os favorecidos e a ordem fica <b>Concluída</b>, com os comprovantes em <b>Arquivos</b>.']],
+];
+const MANUAL_ADMIN = [
+ ['Painel', ['Mostra o faturamento do mês (suas taxas de ordens concluídas), o valor em andamento, o volume pago e quantas coisas dependem de você.', 'A <b>Fila de ação</b> lista ordens para emitir nota e para pagar.']],
+ ['Clientes', ['Menu <b>Clientes</b> → <b>+ Novo cliente</b>: nome, CNPJ, e-mail de acesso e a taxa (%).', 'Avise o cliente: ele abre o link, clica em <b>Primeiro acesso</b> e cria a senha com esse e-mail.', 'A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época.']],
+ ['Equipe', ['Menu <b>Equipe</b> → <b>+ Adicionar pessoa</b> para sócios e funcionários.', 'A pessoa entra pelo mesmo link com <b>Primeiro acesso</b> e tem acesso total de administrador.']],
+ ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
+ ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
+ ['Pagar os favorecidos', ['Quando o cliente envia o comprovante, a ordem vira <b>Pagar favorecido</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido.', 'Faça os pagamentos, anexe o(s) comprovante(s) em um arquivo e clique em <b>Concluir ordem</b>. A taxa entra no faturamento.']],
+ ['Faturamento', ['Menu <b>Faturamento</b>: receita por mês e por cliente, volume repassado e taxa média.', '<b>Baixar CSV do mês</b> gera a planilha para a contabilidade.']],
+ ['Contrato', ['Menu <b>Contrato</b>: preencha os dados da sua empresa (razão social, CNPJ, endereço, representante, foro).', 'Ligue <b>Exigir assinatura</b>: a partir daí o cliente só usa o sistema depois de assinar.', 'A lista mostra quem já assinou; clique em <b>Ver</b> para o contrato assinado, com data, CPF e hash.']],
+];
+function vAjuda(){
+  const admin=S.papel==='admin';
+  const bloco=(itens)=>itens.map(([t,ps],i)=>`<details class="card" style="margin-bottom:10px;padding:14px 18px" ${i===0?'open':''}><summary style="cursor:pointer;font-weight:600;font-size:15px">${i+1}. ${t}</summary><ol style="margin:10px 0 0;padding-left:20px;line-height:1.6">${ps.map(p=>`<li>${p}</li>`).join('')}</ol></details>`).join('');
+  const video=(src,titulo)=>`<div class="card" style="margin-bottom:16px"><h2>${titulo}</h2><video src="${src}" controls preload="metadata" style="width:100%;border-radius:10px;background:#000"></video></div>`;
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Ajuda</h1></div>
+    <p class="muted" style="margin-top:-6px">Assista ao vídeo de cada parte do sistema ou siga o passo a passo.</p>
+    ${admin?`<div class="toolbar"><button class="btn sm ${S.ajudaVer!=='cliente'?'pri':''}" onclick="S.ajudaVer='admin';vAjuda()">Manual do administrador</button><button class="btn sm ${S.ajudaVer==='cliente'?'pri':''}" onclick="S.ajudaVer='cliente';vAjuda()">Manual do cliente</button></div>`:''}
+    ${admin && S.ajudaVer!=='cliente'
+      ? video('videos/manual-admin.mp4','Vídeo: como usar o sistema (administrador)') + bloco(MANUAL_ADMIN)
+      : video('videos/manual-cliente.mp4','Vídeo: como usar o sistema (cliente)') + bloco(MANUAL_CLIENTE)}
+    <p class="muted small">Ainda com dúvida? Fale com a nossa equipe.</p>`;
 }
 
 // ================= CLIENTE: MINHAS ORDENS =================
