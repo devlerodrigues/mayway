@@ -2,8 +2,17 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Premiação · Ordens de Pagamento</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f5c4d">
+<meta name="description" content="Mayway Soluções – campanhas de incentivo e pagamento de premiações">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mayway">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Mayway Soluções · Premiações</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -95,6 +104,60 @@ textarea{min-height:70px;resize:vertical}
 .toast.err{background:var(--bad)}
 .msg{padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:14px}
 .msg.err{background:var(--bad-bg);color:var(--bad)} .msg.ok{background:var(--ok-bg);color:var(--ok)}
+
+/* ===== celular ===== */
+input,select,textarea{font-size:16px}
+header{padding-top:env(safe-area-inset-top)}
+@media(max-width:700px){
+  body{font-size:15px}
+  .bar{padding:10px 14px;gap:10px;flex-wrap:nowrap}
+  .logo{font-size:15px}
+  .who{display:none}
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:15;margin:0;background:#fff;border-top:1px solid var(--line);
+      display:flex;overflow-x:auto;gap:2px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(16,24,40,.06)}
+  nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px;font-size:13px}
+  nav:empty{display:none}
+  main{padding:16px 12px calc(90px + env(safe-area-inset-bottom))}
+  h1{font-size:19px}
+  .card{padding:14px;border-radius:12px}
+  .kpis{grid-template-columns:1fr 1fr;gap:10px}
+  .kpi .v{font-size:18px}
+  .grid[style*="1fr 1fr"]{grid-template-columns:1fr!important}
+  .toolbar{gap:8px}
+  .toolbar h1{flex:1 1 100%}
+  .toolbar select,.toolbar input{min-width:0;flex:1 1 100%}
+  .toolbar .spacer{display:none}
+  .row{grid-template-columns:1fr!important}
+  .row.itemrow{grid-template-columns:1fr auto!important;gap:8px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
+  .row.itemrow > div:first-child{grid-column:1/-1}
+  .dl{grid-template-columns:1fr;gap:2px 0}
+  .dl dt{margin-top:8px}
+  .calc{gap:12px}
+  .calc div{flex:1 1 40%}
+  .btn{padding:11px 14px}
+  /* tabelas viram cartões */
+  .tbl thead{display:none}
+  .tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
+  .tbl tr{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;padding:8px 12px;background:#fff}
+  .tbl td{border:0;padding:5px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;text-align:right}
+  .tbl td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600;text-align:left;flex:0 0 auto;padding-top:2px}
+  .tbl td[data-label=""]::before{display:none}
+  .tbl td[data-label=""]{justify-content:flex-end}
+  .tbl td > div{text-align:right}
+  .tbl td .tdv{display:block;text-align:right;min-width:0}
+  .tbl td .tdv > div{text-align:right}
+  .tbl .num{text-align:right}
+  /* janelas em tela cheia */
+  .modal{padding:0;align-items:stretch}
+  .modal .card{max-width:none;max-height:none;height:100%;border-radius:0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));padding-top:calc(18px + env(safe-area-inset-top))}
+  .modal .x{position:fixed;top:calc(10px + env(safe-area-inset-top));right:10px}
+  .login{padding:16px;align-items:start;padding-top:12vh}
+  #__cap{left:10px;right:10px}
+}
+.install-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:16;background:#101828;color:#fff;border-radius:14px;padding:12px 14px;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.install-bar img{width:36px;height:36px;border-radius:9px}
+.install-bar .btn{padding:8px 12px}
+@media(min-width:701px){.install-bar{bottom:20px;left:auto;max-width:420px}}
 </style>
 </head>
 <body>
@@ -102,7 +165,7 @@ textarea{min-height:70px;resize:vertical}
 <!-- ===== LOGIN ===== -->
 <section id="vLogin" class="login hidden">
   <div class="card">
-    <div class="logo" style="margin-bottom:18px"><i>P</i> Premiação</div>
+    <div class="logo" style="margin-bottom:18px"><i>M</i> Mayway Soluções</div>
     <h1 id="lgTitle">Entrar</h1>
     <p class="muted" id="lgSub" style="margin:0 0 18px">Acesse para enviar e acompanhar suas ordens de pagamento.</p>
     <div id="lgMsg"></div>
@@ -131,7 +194,7 @@ textarea{min-height:70px;resize:vertical}
 <!-- ===== APP ===== -->
 <div id="vApp" class="hidden">
   <header><div class="bar">
-    <div class="logo"><i>P</i> Premiação</div>
+    <div class="logo"><i>M</i> Mayway Soluções</div>
     <nav id="nav"></nav>
     <div class="spacer"></div>
     <span class="who" id="who"></span>
@@ -143,6 +206,29 @@ textarea{min-height:70px;resize:vertical}
 <div id="modal" class="modal hidden"><div class="card"><button class="x" onclick="fecharModal()">×</button><div id="modalBody"></div></div></div>
 
 <script>
+// ================= CELULAR: rótulos das tabelas, instalar app =================
+function rotularTabelas(root){ (root||document).querySelectorAll('table.tbl').forEach(t=>{ const ths=[...t.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+  t.querySelectorAll('tbody tr').forEach(tr=>[...tr.children].forEach((td,i)=>{ if(td.hasAttribute('data-label')) return; td.setAttribute('data-label', ths[i]||''); if(td.childNodes.length>1){ const w=document.createElement('div'); w.className='tdv'; while(td.firstChild) w.appendChild(td.firstChild); td.appendChild(w); } })); }); }
+new MutationObserver(()=>rotularTabelas()).observe(document.body,{childList:true,subtree:true});
+let promptInstalar=null;
+const ehIOS=/iphone|ipad|ipod/i.test(navigator.userAgent), standalone=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); promptInstalar=e; mostrarBarraInstalar(); });
+function mostrarBarraInstalar(){ try{ if(standalone || localStorage.getItem('mw_inst_ok')) return; }catch(e){}
+  if(!promptInstalar && !(ehIOS)) return;
+  let b=document.getElementById('instBar'); if(!b){ b=document.createElement('div'); b.id='instBar'; b.className='install-bar'; document.body.appendChild(b); }
+  b.innerHTML=`<img src="icons/icon-192.png" alt=""><div style="flex:1"><b>Instale o app Mayway</b><div class="small" style="opacity:.8">Ícone na tela inicial, abre como aplicativo.</div></div><button class="btn pri" id="instGo">Instalar</button><button class="btn" id="instNo" style="background:transparent;color:#fff;border-color:#475467">Agora não</button>`;
+  b.style.display='flex';
+  $('#instNo').onclick=()=>{ b.style.display='none'; try{ localStorage.setItem('mw_inst_ok','1'); }catch(e){} };
+  $('#instGo').onclick=async()=>{ if(promptInstalar){ promptInstalar.prompt(); const r=await promptInstalar.userChoice; promptInstalar=null; b.style.display='none'; if(r.outcome==='accepted') try{ localStorage.setItem('mw_inst_ok','1'); }catch(e){} }
+    else { b.style.display='none'; abrirModal(instrucoesInstalar()); } };
+}
+function instrucoesInstalar(){ return `<h1>Instalar o app no celular</h1>
+  <h3>iPhone (Safari)</h3><ol style="line-height:1.7"><li>Abra o sistema no <b>Safari</b>.</li><li>Toque em <b>Compartilhar</b> (quadrado com seta para cima).</li><li>Escolha <b>Adicionar à Tela de Início</b> e toque em <b>Adicionar</b>.</li></ol>
+  <h3>Android (Chrome)</h3><ol style="line-height:1.7"><li>Abra o sistema no <b>Chrome</b>.</li><li>Toque no aviso <b>Instalar app</b> ou no menu <b>⋮</b> → <b>Instalar app</b> / <b>Adicionar à tela inicial</b>.</li></ol>
+  <p class="muted">O ícone Mayway aparece junto dos seus aplicativos e abre o sistema em tela cheia.</p><button class="btn pri" onclick="fecharModal()">Entendi</button>`; }
+if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
+setTimeout(()=>{ if(ehIOS && !standalone && window.innerWidth<=700) mostrarBarraInstalar(); }, 2500);
+
 // ================= CONFIG =================
 const SUPABASE_URL = 'https://cqfouldafqrtvjecespw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Q7oyyHqZZLSwC_Ah_UP_6A_EDaUirXy';
@@ -489,7 +575,7 @@ function desenharItens(){
   $('#nItens').innerHTML = !cli ? `<p class="muted">Selecione o cliente para ver os favorecidos.</p>` :
     !lista.length ? `<p class="muted">Nenhum favorecido cadastrado ainda. Clique em <b>+ Cadastrar favorecido</b>.</p>` :
     NOVA.itens.map((it,ix)=>{ const f=lista.find(x=>x.id===it.fav);
-      return `<div class="row" style="grid-template-columns:2fr 1fr auto;align-items:end;margin-bottom:8px">
+      return `<div class="row itemrow" style="grid-template-columns:2fr 1fr auto;align-items:end;margin-bottom:8px">
         <div><select data-fav="${ix}"><option value="">Escolha o favorecido…</option>${lista.map(x=>`<option value="${x.id}" ${x.id===it.fav?'selected':''}>${esc(x.nome)} · ${esc(fmtDoc(x.cpf))} · ${x.forma_pagamento==='pix'?'PIX':'TED'}</option>`).join('')}</select>
           ${f?`<div class="muted small" style="margin-top:4px">${esc(favDados(f))}${f.forma_pagamento==='ted'?` · <b>+${brl(S.custoTed)} de TED</b>`:''}</div>`:''}</div>
         <div><input data-val="${ix}" inputmode="decimal" placeholder="Valor R$" value="${esc(it.valor)}"></div>
@@ -884,6 +970,7 @@ function vAjuda(){
     ${admin && S.ajudaVer!=='cliente'
       ? video('videos/manual-admin.mp4','Vídeo: como usar o sistema (administrador)') + bloco(MANUAL_ADMIN)
       : video('videos/manual-cliente.mp4','Vídeo: como usar o sistema (cliente)') + bloco(MANUAL_CLIENTE)}
+    <div class="card" style="margin-top:6px"><h2>📱 Instalar no celular</h2><p class="muted" style="margin-top:0">Coloque o ícone da Mayway na tela inicial do seu celular, como um aplicativo.</p><button class="btn" onclick="abrirModal(instrucoesInstalar())">Ver como instalar (iPhone e Android)</button></div>
     <p class="muted small">Ainda com dúvida? Fale com a nossa equipe.</p>`;
 }
 
