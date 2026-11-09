@@ -254,7 +254,7 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['nova','Nova ordem'],['campanhas','Campanhas'],['clientes','Clientes'],['favorecidos','Favorecidos'],['faturamento','Faturamento'],['equipe','Equipe']]);
     await carregar(); ir(S.tab||'painel');
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
@@ -269,7 +269,7 @@ function montarNav(items){
 }
 function ir(tab){
   S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas}[tab])();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe}[tab])();
 }
 
 // ================= DADOS =================
@@ -695,6 +695,39 @@ function formCampanha(id){
     if(res.error) throw res.error;
     fecharModal(); toast(admin?'Campanha salva.':'Campanha enviada para análise.'); await carregar(); ir(admin?'campanhas':(S.tab==='nova'?'nova':'campanhas'));
   });};
+}
+
+// ================= EQUIPE (administradores) =================
+async function vEquipe(){
+  $('#main').innerHTML='<div class="card empty">Carregando…</div>';
+  const {data, error}=await sb.rpc('prem_equipe'); if(error) return toast(error.message,true);
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Equipe</h1><div class="spacer"></div><button class="btn pri" id="eqNovo">+ Adicionar pessoa</button></div>
+    <p class="muted" style="margin-top:-6px">Pessoas com acesso total de administrador: veem todos os clientes, aprovam campanhas, emitem notas e concluem pagamentos.</p>
+    <div class="card"><div class="tblwrap"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Acesso</th><th>Último acesso</th><th></th></tr></thead><tbody>
+      ${(data||[]).map(u=>`<tr><td><b>${esc(u.nome||'—')}</b></td><td>${esc(u.email)}</td>
+        <td>${u.tem_login?'<span class="pill st-concluida">Ativo</span>':'<span class="pill st-enviada">Aguardando primeiro acesso</span>'}</td>
+        <td>${u.ultimo_acesso?dth(u.ultimo_acesso):'—'}</td>
+        <td class="num">${u.email.toLowerCase()===S.user.email.toLowerCase()?'<span class="muted small">você</span>':`<button class="btn sm danger" data-rm="${esc(u.email)}">Remover</button>`}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+  $('#eqNovo').onclick=()=>{
+    abrirModal(`<h1>Adicionar pessoa à equipe</h1>
+      <form id="eqForm"><div class="f"><label>Nome</label><input id="eqNome" required></div>
+      <div class="f"><label>E-mail</label><input id="eqEmail" type="email" required></div>
+      <p class="muted small">Depois de salvar, avise a pessoa: abrir ${esc(location.href.split('?')[0].split('#')[0])} → <b>Primeiro acesso</b> → criar a senha com este e-mail. Se ela já tiver login no Sistema Alter, é só clicar em <b>Entrar</b> com a mesma senha.</p>
+      <button class="btn pri" id="eqBtn">Salvar</button></form>`);
+    $('#eqForm').onsubmit=e=>{ e.preventDefault(); busy($('#eqBtn'),async()=>{
+      const email=$('#eqEmail').value.trim().toLowerCase();
+      if(S.clientes.some(c=>c.email.toLowerCase()===email)) throw new Error('Este e-mail já está cadastrado como cliente. Use outro e-mail para a equipe.');
+      const {error}=await sb.from('prem_admin_emails').insert({email, nome:$('#eqNome').value.trim()});
+      if(error) throw new Error(error.code==='23505'?'Este e-mail já está na equipe.':error.message);
+      fecharModal(); toast('Pessoa adicionada à equipe.'); vEquipe(); });};
+  };
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+    abrirModal(`<h2>Remover ${esc(b.dataset.rm)} da equipe?</h2><p class="muted">A pessoa perde o acesso de administrador imediatamente.</p>
+      <button class="btn danger" id="rmOk">Remover</button> <button class="btn" onclick="fecharModal()">Voltar</button>`);
+    $('#rmOk').onclick=()=>busy($('#rmOk'),async()=>{ const {error}=await sb.rpc('prem_remover_admin',{p_email:b.dataset.rm}); if(error) throw error; fecharModal(); toast('Acesso removido.'); vEquipe(); });
+  });
 }
 
 // ================= CLIENTE: MINHAS ORDENS =================
