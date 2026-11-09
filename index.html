@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Premiação · Ordens de Pagamento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --ink:#14181f; --muted:#667085; --line:#e4e7ec;
+  --brand:#0f5c4d; --brand-2:#e7f3f0; --warn:#b54708; --warn-bg:#fef0c7;
+  --info:#175cd3; --info-bg:#d1e9ff; --ok:#067647; --ok-bg:#dcfae6; --bad:#b42318; --bad-bg:#fee4e2;
+  --violet:#5925dc; --violet-bg:#ebe9fe; --r:12px;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+/* layout */
+header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:12px 20px}
+.logo{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
+.logo i{width:28px;height:28px;border-radius:8px;background:var(--brand);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:14px}
+nav{display:flex;gap:4px;margin-left:12px}
+nav button{background:none;border:0;padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer;font-weight:500}
+nav button.on{background:var(--brand-2);color:var(--brand)}
+.spacer{flex:1}
+.who{color:var(--muted);font-size:13px}
+main{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
+h1{font-size:20px;margin:0 0 16px}
+h2{font-size:15px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.grid{display:grid;gap:16px}
+.kpis{grid-template-columns:repeat(4,1fr);margin-bottom:20px}
+.kpi .l{color:var(--muted);font-size:12px;font-weight:500}
+.kpi .v{font-size:22px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+.kpi .s{color:var(--muted);font-size:12px;margin-top:4px}
+@media(max-width:860px){.kpis{grid-template-columns:repeat(2,1fr)} nav{display:none} .bar{flex-wrap:wrap}}
+/* buttons */
+.btn{border:1px solid var(--line);background:#fff;padding:9px 14px;border-radius:8px;cursor:pointer;font-weight:500;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:#f9fafb}
+.btn.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:wait}
+/* forms */
+label{display:block;font-size:12px;font-weight:600;color:#344054;margin-bottom:6px}
+input,select,textarea{width:100%;padding:9px 11px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brand-2);border-color:var(--brand)}
+textarea{min-height:70px;resize:vertical}
+.f{margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.row{grid-template-columns:1fr}}
+.calc{background:var(--brand-2);border-radius:10px;padding:12px 14px;display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px}
+.calc div{font-size:12px;color:var(--muted)} .calc b{display:block;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+/* table */
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.toolbar select,.toolbar input{width:auto;min-width:170px}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr.click{cursor:pointer} .tbl tr.click:hover td{background:#fafbfc}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tblwrap{overflow-x:auto}
+.empty{color:var(--muted);text-align:center;padding:40px 10px}
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.st-enviada{background:var(--warn-bg);color:var(--warn)}
+.st-nota_emitida{background:var(--info-bg);color:var(--info)}
+.st-pago_cliente{background:var(--violet-bg);color:var(--violet)}
+.st-concluida{background:var(--ok-bg);color:var(--ok)}
+.st-cancelada{background:#f2f4f7;color:var(--muted)}
+.muted{color:var(--muted)} .small{font-size:12px}
+/* login */
+.login{min-height:100vh;display:grid;place-items:center;padding:20px}
+.login .card{width:100%;max-width:400px;padding:28px}
+.login h1{margin-bottom:4px}
+.link{background:none;border:0;color:var(--brand);cursor:pointer;padding:0;font-weight:500}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(16,24,40,.45);display:grid;place-items:center;padding:20px;z-index:20}
+.modal .card{width:100%;max-width:720px;max-height:92vh;overflow:auto;position:relative}
+.modal .x{position:absolute;right:14px;top:12px;background:none;border:0;font-size:22px;cursor:pointer;color:var(--muted)}
+.dl{display:grid;grid-template-columns:160px 1fr;gap:8px 14px;margin:0 0 16px}
+.dl dt{color:var(--muted);font-size:13px} .dl dd{margin:0}
+.steps{display:flex;gap:6px;margin:6px 0 18px}
+.steps div{flex:1;height:6px;border-radius:4px;background:var(--line)}
+.steps div.on{background:var(--brand)}
+.action{border:1px dashed var(--brand);background:#fbfdfc;border-radius:10px;padding:16px;margin-top:8px}
+.files{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tl{list-style:none;padding:0;margin:0;font-size:13px}
+.tl li{padding:6px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#101828;color:#fff;padding:11px 16px;border-radius:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.toast.err{background:var(--bad)}
+.msg{padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:14px}
+.msg.err{background:var(--bad-bg);color:var(--bad)} .msg.ok{background:var(--ok-bg);color:var(--ok)}
+</style>
+</head>
+<body>
+
+<!-- ===== LOGIN ===== -->
+<section id="vLogin" class="login hidden">
+  <div class="card">
+    <div class="logo" style="margin-bottom:18px"><i>P</i> Premiação</div>
+    <h1 id="lgTitle">Entrar</h1>
+    <p class="muted" id="lgSub" style="margin:0 0 18px">Acesse para enviar e acompanhar suas ordens de pagamento.</p>
+    <div id="lgMsg"></div>
+    <form id="lgForm">
+      <div class="f"><label>E-mail</label><input id="lgEmail" type="email" required autocomplete="email"></div>
+      <div class="f" id="lgPassBox"><label>Senha</label><input id="lgPass" type="password" minlength="6" autocomplete="current-password"></div>
+      <button class="btn pri" style="width:100%;justify-content:center" id="lgBtn">Entrar</button>
+    </form>
+    <p class="small muted" style="margin:16px 0 0;display:flex;justify-content:space-between">
+      <button class="link" data-mode="signup">Primeiro acesso</button>
+      <button class="link" data-mode="reset">Esqueci a senha</button>
+    </p>
+  </div>
+</section>
+
+<!-- ===== SEM VÍNCULO ===== -->
+<section id="vNoLink" class="login hidden">
+  <div class="card">
+    <h1>Acesso não liberado</h1>
+    <p class="muted">O e-mail <b id="nlEmail"></b> ainda não está cadastrado como cliente. Peça ao administrador para cadastrar este e-mail e tente de novo.</p>
+    <button class="btn" onclick="sair()">Sair</button>
+  </div>
+</section>
+
+<!-- ===== APP ===== -->
+<div id="vApp" class="hidden">
+  <header><div class="bar">
+    <div class="logo"><i>P</i> Premiação</div>
+    <nav id="nav"></nav>
+    <div class="spacer"></div>
+    <span class="who" id="who"></span>
+    <button class="btn sm" onclick="sair()">Sair</button>
+  </div></header>
+  <main id="main"></main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="card"><button class="x" onclick="fecharModal()">×</button><div id="modalBody"></div></div></div>
+
+<script>
+// ================= CONFIG =================
+const SUPABASE_URL = 'https://cqfouldafqrtvjecespw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Q7oyyHqZZLSwC_Ah_UP_6A_EDaUirXy';
+const BUCKET = 'premiacao';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const ST = {
+  enviada:      {l:'Aguardando nota', c:'Aguardando sua nota', step:1},
+  nota_emitida: {l:'Aguardando pagamento do cliente', c:'Pagar a nota', step:2},
+  pago_cliente: {l:'Pagar favorecido', c:'Nota paga · aguardando repasse', step:3},
+  concluida:    {l:'Concluída', c:'Concluída', step:4},
+  cancelada:    {l:'Cancelada', c:'Cancelada', step:0},
+};
+const S = { user:null, papel:null, clienteId:null, cliente:null, clientes:[], ordens:[], tab:null, filtro:{status:'acao', cliente:'', q:''} };
+
+// ================= UTIL =================
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl = v => Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const pct = v => Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:3}) + '%';
+const dt = v => v ? new Date(v).toLocaleDateString('pt-BR') : '—';
+const dth = v => v ? new Date(v).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : '—';
+const dIso = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+const pill = (s, cli) => `<span class="pill st-${s}">${esc(cli ? ST[s].c : ST[s].l)}</span>`;
+function toast(m, err){ const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(), err?6000:3000); }
+function parseValor(s){ s=String(s).trim(); if(!s) return 0; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); return Number(s)||0; }
+function show(id){ ['vLogin','vNoLink','vApp'].forEach(v=>$('#'+v).classList.toggle('hidden', v!==id)); }
+function abrirModal(html){ $('#modalBody').innerHTML=html; $('#modal').classList.remove('hidden'); }
+function fecharModal(){ $('#modal').classList.add('hidden'); }
+$('#modal').addEventListener('click', e=>{ if(e.target.id==='modal') fecharModal(); });
+async function busy(btn, fn){ btn.disabled=true; const t=btn.textContent; btn.textContent='Aguarde…'; try{ await fn(); } catch(e){ console.error(e); toast(e.message||String(e), true); } finally{ btn.disabled=false; btn.textContent=t; } }
+
+async function upload(clienteId, ordemId, tipo, file){
+  if(!file) return null;
+  if(file.size > 15*1024*1024) throw new Error('Arquivo maior que 15 MB.');
+  const ext = (file.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const path = `${clienteId}/${ordemId}/${tipo}-${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from(BUCKET).upload(path, file, { upsert:false, contentType:file.type||undefined });
+  if(error) throw error;
+  return path;
+}
+async function abrirArquivo(path){
+  const w = window.open('', '_blank');
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 300);
+  if(error){ w && w.close(); return toast(error.message, true); }
+  if(w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+
+// ================= AUTH =================
+let lgMode = 'login';
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=e=>{ e.preventDefault(); setLgMode(lgMode===b.dataset.mode?'login':b.dataset.mode); });
+function setLgMode(m){
+  lgMode=m; $('#lgMsg').innerHTML='';
+  const cfg = { login:['Entrar','Acesse para enviar e acompanhar suas ordens de pagamento.','Entrar'],
+    signup:['Primeiro acesso','Use o e-mail que você informou ao administrador e crie uma senha.','Criar senha'],
+    reset:['Recuperar senha','Enviaremos um link para você criar uma nova senha.','Enviar link'] }[m];
+  $('#lgTitle').textContent=cfg[0]; $('#lgSub').textContent=cfg[1]; $('#lgBtn').textContent=cfg[2];
+  $('#lgPassBox').classList.toggle('hidden', m==='reset');
+  document.querySelectorAll('[data-mode]').forEach(b=>b.textContent = (b.dataset.mode===m ? 'Voltar ao login' : (b.dataset.mode==='signup'?'Primeiro acesso':'Esqueci a senha')));
+}
+$('#lgForm').onsubmit = e => { e.preventDefault(); busy($('#lgBtn'), async ()=>{
+  const email=$('#lgEmail').value.trim(), password=$('#lgPass').value;
+  const msg=(t,ok)=>$('#lgMsg').innerHTML=`<div class="msg ${ok?'ok':'err'}">${esc(t)}</div>`;
+  if(lgMode==='reset'){
+    const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.href.split('#')[0]});
+    return error?msg(error.message):msg('Se o e-mail existir, você receberá o link em instantes.',true);
+  }
+  if(!password || password.length<6) return msg('A senha precisa ter pelo menos 6 caracteres.');
+  if(lgMode==='signup'){
+    const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.href.split('#')[0]}});
+    if(error) return msg(error.message);
+    if(!data.session) return msg('Conta criada! Confirme pelo link enviado ao seu e-mail e depois entre.',true);
+    return iniciar();
+  }
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  if(error) return msg(error.message==='Invalid login credentials'?'E-mail ou senha inválidos.':error.message);
+  iniciar();
+});};
+async function sair(){ await sb.auth.signOut(); location.reload(); }
+
+sb.auth.onAuthStateChange(async (ev)=>{
+  if(ev==='PASSWORD_RECOVERY'){
+    show('vApp'); $('#nav').innerHTML=''; $('#main').innerHTML=`<div class="card" style="max-width:420px"><h2>Nova senha</h2>
+      <div class="f"><label>Nova senha</label><input id="np" type="password" minlength="6"></div>
+      <button class="btn pri" id="npBtn">Salvar</button></div>`;
+    $('#npBtn').onclick=()=>busy($('#npBtn'),async()=>{ const {error}=await sb.auth.updateUser({password:$('#np').value}); if(error) throw error; toast('Senha alterada.'); iniciar(); });
+  }
+});
+
+async function iniciar(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ show('vLogin'); return; }
+  S.user = session.user;
+  const { data, error } = await sb.rpc('prem_vincular');
+  if(error){ toast(error.message,true); show('vLogin'); return; }
+  S.papel = data?.papel; S.clienteId = data?.cliente_id || null;
+  if(!S.papel){ $('#nlEmail').textContent=S.user.email; show('vNoLink'); return; }
+  show('vApp');
+  $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
+  if(S.papel==='admin'){
+    montarNav([['painel','Painel'],['ordens','Ordens'],['clientes','Clientes'],['faturamento','Faturamento']]);
+    await carregar(); ir(S.tab||'painel');
+  } else {
+    const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
+    S.cliente = c;
+    montarNav([['minhas','Minhas ordens'],['nova','Nova ordem']]);
+    await carregar(); ir(S.tab||'minhas');
+  }
+}
+function montarNav(items){
+  $('#nav').innerHTML = items.map(([k,l])=>`<button data-tab="${k}">${l}</button>`).join('');
+  $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>ir(b.dataset.tab));
+}
+function ir(tab){
+  S.tab=tab; $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:()=>vNova()}[tab])();
+}
+
+// ================= DADOS =================
+async function carregar(){
+  const q = sb.from('prem_ordens').select('*, prem_clientes(nome)').order('created_at',{ascending:false}).limit(1000);
+  const [o, c] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}) ]);
+  if(o.error) toast(o.error.message,true);
+  S.ordens = o.data||[]; S.clientes = c.data||[];
+}
+async function recarregar(){ await carregar(); ir(S.tab); }
+setInterval(()=>{ if(S.papel && $('#modal').classList.contains('hidden') && !['nova'].includes(S.tab)) recarregar(); }, 60000);
+
+// ================= ADMIN: PAINEL =================
+function vPainel(){
+  const now=new Date(), ini=new Date(now.getFullYear(),now.getMonth(),1);
+  const conc = S.ordens.filter(o=>o.status==='concluida');
+  const mes = conc.filter(o=>new Date(o.concluida_em)>=ini);
+  const pipe = S.ordens.filter(o=>['enviada','nota_emitida','pago_cliente'].includes(o.status));
+  const cnt = s => S.ordens.filter(o=>o.status===s).length;
+  const fatMes = mes.reduce((a,o)=>a+Number(o.valor_taxa),0);
+  const fatPipe = pipe.reduce((a,o)=>a+Number(o.valor_taxa),0);
+  const volMes = mes.reduce((a,o)=>a+Number(o.valor_pagamento),0);
+  const acao = S.ordens.filter(o=>['enviada','pago_cliente'].includes(o.status));
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Painel</h1><div class="spacer"></div><button class="btn sm" onclick="recarregar()">Atualizar</button></div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="l">Faturamento do mês</div><div class="v">${brl(fatMes)}</div><div class="s">${mes.length} ordens concluídas</div></div>
+      <div class="card kpi"><div class="l">Faturamento em andamento</div><div class="v">${brl(fatPipe)}</div><div class="s">${pipe.length} ordens abertas</div></div>
+      <div class="card kpi"><div class="l">Volume pago no mês</div><div class="v">${brl(volMes)}</div><div class="s">repassado aos favorecidos</div></div>
+      <div class="card kpi"><div class="l">Precisam de você</div><div class="v">${acao.length}</div><div class="s">${cnt('enviada')} emitir nota · ${cnt('pago_cliente')} pagar</div></div>
+    </div>
+    <div class="card"><h2>Fila de ação</h2>${tabelaOrdens(acao, true)}</div>`;
+  ligarLinhas();
+}
+
+// ================= ADMIN: ORDENS =================
+function vOrdens(){
+  const f=S.filtro;
+  let lista = S.ordens.filter(o=>{
+    if(f.status==='acao' && !['enviada','pago_cliente'].includes(o.status)) return false;
+    if(f.status && f.status!=='acao' && o.status!==f.status) return false;
+    if(f.cliente && o.cliente_id!==f.cliente) return false;
+    if(f.q){ const t=(o.descricao+' '+o.favorecido_nome+' '+o.numero+' '+(o.numero_nota||'')+' '+(o.prem_clientes?.nome||'')).toLowerCase(); if(!t.includes(f.q.toLowerCase())) return false; }
+    return true; });
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Ordens</h1><div class="spacer"></div><button class="btn pri" onclick="vNova(true)">+ Nova ordem</button></div>
+    <div class="card">
+      <div class="toolbar">
+        <select id="fSt"><option value="acao">Precisam de mim</option><option value="">Todos os status</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}">${v.l}</option>`).join('')}</select>
+        <select id="fCli"><option value="">Todos os clientes</option>${S.clientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>
+        <input id="fQ" placeholder="Buscar descrição, favorecido, nº…" value="${esc(f.q)}">
+        <span class="muted small">${lista.length} ordens</span>
+      </div>
+      ${tabelaOrdens(lista, true)}
+    </div>`;
+  $('#fSt').value=f.status; $('#fCli').value=f.cliente;
+  $('#fSt').onchange=e=>{f.status=e.target.value;vOrdens();};
+  $('#fCli').onchange=e=>{f.cliente=e.target.value;vOrdens();};
+  $('#fQ').onchange=e=>{f.q=e.target.value;vOrdens();};
+  ligarLinhas();
+}
+function tabelaOrdens(lista, admin){
+  if(!lista.length) return `<div class="empty">Nenhuma ordem por aqui.</div>`;
+  return `<div class="tblwrap"><table class="tbl"><thead><tr>
+    <th>Nº</th><th>Data</th>${admin?'<th>Cliente</th>':''}<th>Descrição / favorecido</th>
+    <th class="num">Pagamento</th>${admin?'<th class="num">Taxa</th>':''}<th class="num">Valor da nota</th><th>Status</th></tr></thead><tbody>
+    ${lista.map(o=>`<tr class="click" data-id="${o.id}">
+      <td>#${o.numero}</td><td>${dt(o.created_at)}</td>${admin?`<td>${esc(o.prem_clientes?.nome)}</td>`:''}
+      <td><div>${esc(o.descricao)}</div><div class="muted small">${esc(o.favorecido_nome)}${o.vencimento?' · vence '+dIso(o.vencimento):''}</div></td>
+      <td class="num">${brl(o.valor_pagamento)}</td>
+      ${admin?`<td class="num">${brl(o.valor_taxa)}<div class="muted small">${pct(o.taxa_percentual)}</div></td>`:''}
+      <td class="num"><b>${brl(o.valor_nota)}</b></td><td>${pill(o.status, !admin)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function ligarLinhas(){ document.querySelectorAll('tr.click').forEach(tr=>tr.onclick=()=>detalhe(tr.dataset.id)); }
+
+// ================= DETALHE / AÇÕES =================
+async function detalhe(id){
+  const o = S.ordens.find(x=>x.id===id); if(!o) return;
+  const admin = S.papel==='admin';
+  const { data:hist } = await sb.from('prem_historico').select('*').eq('ordem_id',id).order('id');
+  const arq = [['anexo_ordem','Ordem / boleto'],['anexo_nota','Nota fiscal'],['anexo_comprovante_cliente','Comprovante do cliente'],['anexo_comprovante_pagamento','Comprovante do repasse']]
+    .filter(([k])=>o[k]).map(([k,l])=>`<button class="btn sm" data-file="${esc(o[k])}">📎 ${l}</button>`).join('') || '<span class="muted small">Nenhum anexo ainda.</span>';
+  const step = ST[o.status].step;
+  let acao = '';
+  if(admin && o.status==='enviada') acao = `<div class="action"><h2>Emitir nota para o cliente</h2>
+      <div class="row"><div class="f"><label>Nº da nota</label><input id="aNum"></div>
+      <div class="f"><label>Taxa desta ordem (%)</label><input id="aTaxa" value="${String(o.taxa_percentual).replace('.',',')}"></div></div>
+      <div class="calc" id="aCalc"></div>
+      <div class="f"><label>Arquivo da nota (PDF)</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
+      <button class="btn pri" id="aBtn">Enviar nota ao cliente</button></div>`;
+  if(!admin && o.status==='nota_emitida') acao = `<div class="action"><h2>Pague a nota e envie o comprovante</h2>
+      <p class="muted" style="margin-top:0">Valor da nota: <b>${brl(o.valor_nota)}</b>. Baixe a nota acima, faça o pagamento e anexe o comprovante.</p>
+      <div class="f"><label>Comprovante de pagamento</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
+      <button class="btn pri" id="aBtn">Enviar comprovante</button></div>`;
+  if(admin && o.status==='nota_emitida') acao = `<div class="action"><p class="muted" style="margin:0 0 10px">Aguardando o cliente pagar a nota. Se ele te mandou o comprovante por fora, você pode anexar aqui.</p>
+      <input id="aFile" type="file" accept=".pdf,image/*" style="margin-bottom:10px"><button class="btn" id="aBtn">Anexar comprovante do cliente</button></div>`;
+  if(admin && o.status==='pago_cliente') acao = `<div class="action"><h2>Pagar o favorecido</h2>
+      <dl class="dl" style="margin-bottom:12px"><dt>Favorecido</dt><dd><b>${esc(o.favorecido_nome)}</b> ${esc(o.favorecido_documento||'')}</dd>
+      <dt>Dados de pagamento</dt><dd style="white-space:pre-wrap">${esc(o.dados_pagamento||'—')}</dd><dt>Valor a pagar</dt><dd><b>${brl(o.valor_pagamento)}</b></dd></dl>
+      <div class="f"><label>Comprovante do pagamento</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
+      <button class="btn pri" id="aBtn">Concluir ordem</button></div>`;
+  const podeCancelar = o.status!=='concluida' && o.status!=='cancelada' && (admin || o.status==='enviada');
+  abrirModal(`
+    <div class="muted small">Ordem #${o.numero} · ${dth(o.created_at)}</div>
+    <h1 style="margin:4px 0 6px">${esc(o.descricao)}</h1>
+    <div>${pill(o.status, !admin)}</div>
+    ${step?`<div class="steps">${[1,2,3,4].map(i=>`<div class="${i<=step?'on':''}"></div>`).join('')}</div>`:'<div style="height:14px"></div>'}
+    <dl class="dl">
+      ${admin?`<dt>Cliente</dt><dd>${esc(o.prem_clientes?.nome)}</dd>`:''}
+      <dt>Favorecido</dt><dd>${esc(o.favorecido_nome)} <span class="muted">${esc(o.favorecido_documento||'')}</span></dd>
+      <dt>Dados de pagamento</dt><dd style="white-space:pre-wrap">${esc(o.dados_pagamento||'—')}</dd>
+      <dt>Vencimento</dt><dd>${dIso(o.vencimento)}</dd>
+      <dt>Valor do pagamento</dt><dd>${brl(o.valor_pagamento)}</dd>
+      ${admin?`<dt>Sua taxa</dt><dd>${brl(o.valor_taxa)} <span class="muted">(${pct(o.taxa_percentual)})</span></dd>`:''}
+      <dt>Valor da nota</dt><dd><b>${brl(o.valor_nota)}</b>${o.numero_nota?` <span class="muted">· NF ${esc(o.numero_nota)}</span>`:''}</dd>
+      ${o.observacao?`<dt>Observação</dt><dd style="white-space:pre-wrap">${esc(o.observacao)}</dd>`:''}
+      ${o.motivo_cancelamento?`<dt>Motivo do cancelamento</dt><dd>${esc(o.motivo_cancelamento)}</dd>`:''}
+    </dl>
+    <h2>Arquivos</h2><div class="files">${arq}</div>
+    ${acao}
+    <h2 style="margin-top:20px">Histórico</h2>
+    <ul class="tl">${(hist||[]).map(h=>`<li><span>${esc(ST[h.status].l)}${h.observacao?' — '+esc(h.observacao):''}</span><span class="muted">${dth(h.created_at)}</span></li>`).join('')}</ul>
+    ${podeCancelar?`<div style="margin-top:18px;display:flex;gap:8px;align-items:center"><input id="cMot" placeholder="Motivo do cancelamento" style="max-width:320px"><button class="btn danger sm" id="cBtn">Cancelar ordem</button></div>`:''}
+  `);
+  document.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
+  const btn=$('#aBtn');
+  if(admin && o.status==='enviada'){
+    const upd=()=>{ const t=parseValor($('#aTaxa').value), tx=Math.round(o.valor_pagamento*t)/100;
+      $('#aCalc').innerHTML=`<div>Pagamento<b>${brl(o.valor_pagamento)}</b></div><div>Sua taxa<b>${brl(tx)}</b></div><div>Valor da nota<b>${brl(Number(o.valor_pagamento)+tx)}</b></div>`; };
+    $('#aTaxa').oninput=upd; upd();
+    btn.onclick=()=>busy(btn,async()=>{
+      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o arquivo da nota.');
+      const path=await upload(o.cliente_id,o.id,'nota',f);
+      const {error}=await sb.rpc('prem_emitir_nota',{p_ordem:o.id,p_numero_nota:$('#aNum').value.trim()||null,p_anexo:path,p_taxa:parseValor($('#aTaxa').value)});
+      if(error) throw error; toast('Nota enviada ao cliente.'); fecharModal(); recarregar(); });
+  }
+  if(o.status==='nota_emitida' && btn){
+    btn.onclick=()=>busy(btn,async()=>{
+      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o comprovante.');
+      const path=await upload(o.cliente_id,o.id,'comprovante',f);
+      const {error}=await sb.rpc('prem_cliente_enviar_comprovante',{p_ordem:o.id,p_anexo:path});
+      if(error) throw error; toast('Comprovante enviado.'); fecharModal(); recarregar(); });
+  }
+  if(admin && o.status==='pago_cliente'){
+    btn.onclick=()=>busy(btn,async()=>{
+      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe o comprovante do pagamento.');
+      const path=await upload(o.cliente_id,o.id,'pagamento',f);
+      const {error}=await sb.rpc('prem_concluir',{p_ordem:o.id,p_anexo:path});
+      if(error) throw error; toast('Ordem concluída. Faturamento registrado.'); fecharModal(); recarregar(); });
+  }
+  if(podeCancelar) $('#cBtn').onclick=()=>busy($('#cBtn'),async()=>{
+    const m=$('#cMot').value.trim(); if(!m) throw new Error('Informe o motivo do cancelamento.');
+    const {error}=await sb.rpc('prem_cancelar',{p_ordem:o.id,p_motivo:m}); if(error) throw error;
+    toast('Ordem cancelada.'); fecharModal(); recarregar(); });
+}
+
+// ================= NOVA ORDEM (cliente ou admin) =================
+function vNova(emModal){
+  const admin=S.papel==='admin';
+  const html = `
+    <h1>Nova ordem de pagamento</h1>
+    <form id="nForm">
+      ${admin?`<div class="f"><label>Cliente</label><select id="nCli" required><option value="">Selecione…</option>${S.clientes.filter(c=>c.ativo).map(c=>`<option value="${c.id}">${esc(c.nome)} (${pct(c.taxa_percentual)})</option>`).join('')}</select></div>`:''}
+      <div class="f"><label>Descrição</label><input id="nDesc" required placeholder="Ex.: Premiação equipe de vendas – outubro"></div>
+      <div class="row">
+        <div class="f"><label>Favorecido (quem vai receber)</label><input id="nFav" required></div>
+        <div class="f"><label>CPF/CNPJ do favorecido</label><input id="nFavDoc"></div>
+      </div>
+      <div class="f"><label>Dados para pagamento (PIX, banco/agência/conta ou linha digitável)</label><textarea id="nDados" required></textarea></div>
+      <div class="row">
+        <div class="f"><label>Valor a pagar (R$)</label><input id="nValor" required inputmode="decimal" placeholder="0,00"></div>
+        <div class="f"><label>Vencimento</label><input id="nVenc" type="date"></div>
+      </div>
+      <div class="calc" id="nCalc"></div>
+      <div class="f"><label>Anexo (boleto, planilha, ordem) – opcional</label><input id="nFile" type="file"></div>
+      <div class="f"><label>Observação</label><textarea id="nObs"></textarea></div>
+      <button class="btn pri" id="nBtn">Enviar ordem</button>
+    </form>`;
+  if(emModal) abrirModal(html); else $('#main').innerHTML = `<div class="card" style="max-width:720px">${html}</div>`;
+  const taxa=()=> admin ? Number(S.clientes.find(c=>c.id===$('#nCli').value)?.taxa_percentual||0) : Number(S.cliente?.taxa_percentual||0);
+  const upd=()=>{ const v=parseValor($('#nValor').value), t=taxa(), tx=Math.round(v*t)/100;
+    $('#nCalc').innerHTML=`<div>Valor a pagar<b>${brl(v)}</b></div><div>Taxa de serviço (${pct(t)})<b>${brl(tx)}</b></div><div>Valor da nota<b>${brl(v+tx)}</b></div>`; };
+  $('#nValor').oninput=upd; if(admin) $('#nCli').onchange=upd; upd();
+  $('#nForm').onsubmit=e=>{ e.preventDefault(); busy($('#nBtn'),async()=>{
+    const cliente_id = admin ? $('#nCli').value : S.clienteId;
+    const valor=parseValor($('#nValor').value); if(valor<=0) throw new Error('Informe o valor a pagar.');
+    const id=crypto.randomUUID();
+    const anexo=await upload(cliente_id,id,'ordem',$('#nFile').files[0]);
+    const {error}=await sb.from('prem_ordens').insert({ id, cliente_id, descricao:$('#nDesc').value.trim(), favorecido_nome:$('#nFav').value.trim(),
+      favorecido_documento:$('#nFavDoc').value.trim()||null, dados_pagamento:$('#nDados').value.trim(), valor_pagamento:valor,
+      vencimento:$('#nVenc').value||null, observacao:$('#nObs').value.trim()||null, anexo_ordem:anexo });
+    if(error) throw error;
+    toast('Ordem enviada!'); if(emModal) fecharModal(); await carregar(); ir(admin?'ordens':'minhas');
+  });};
+}
+
+// ================= CLIENTE: MINHAS ORDENS =================
+function vMinhas(){
+  const pend=S.ordens.filter(o=>o.status==='nota_emitida');
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Olá, ${esc(S.cliente?.nome||'')}</h1><div class="spacer"></div>
+      <button class="btn sm" onclick="recarregar()">Atualizar</button><button class="btn pri" onclick="ir('nova')">+ Nova ordem</button></div>
+    ${pend.length?`<div class="card" style="margin-bottom:16px;border-color:var(--info)"><h2>Você tem ${pend.length} nota(s) para pagar</h2>
+      <p class="muted" style="margin:0">Abra a ordem, baixe a nota, pague e anexe o comprovante para liberarmos o pagamento.</p></div>`:''}
+    <div class="card">${tabelaOrdens(S.ordens,false)}</div>`;
+  ligarLinhas();
+}
+
+// ================= ADMIN: CLIENTES =================
+function vClientes(){
+  const stats = id => { const os=S.ordens.filter(o=>o.cliente_id===id&&o.status==='concluida'); return [os.length, os.reduce((a,o)=>a+Number(o.valor_taxa),0)]; };
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Clientes</h1><div class="spacer"></div><button class="btn pri" onclick="formCliente()">+ Novo cliente</button></div>
+    <div class="card">${S.clientes.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Cliente</th><th>E-mail de acesso</th><th class="num">Taxa</th><th class="num">Concluídas</th><th class="num">Faturado</th><th>Status</th></tr></thead><tbody>
+      ${S.clientes.map(c=>{const [n,f]=stats(c.id); return `<tr class="click" data-cli="${c.id}"><td><b>${esc(c.nome)}</b><div class="muted small">${esc(c.documento||'')}</div></td><td>${esc(c.email)}</td>
+        <td class="num">${pct(c.taxa_percentual)}</td><td class="num">${n}</td><td class="num">${brl(f)}</td><td>${c.ativo?'<span class="pill st-concluida">Ativo</span>':'<span class="pill st-cancelada">Inativo</span>'}</td></tr>`;}).join('')}
+      </tbody></table></div>`:`<div class="empty">Cadastre seu primeiro cliente. Ele vai entrar no sistema com o e-mail que você informar aqui.</div>`}</div>`;
+  document.querySelectorAll('[data-cli]').forEach(tr=>tr.onclick=()=>formCliente(tr.dataset.cli));
+}
+function formCliente(id){
+  const c = S.clientes.find(x=>x.id===id) || {ativo:true, taxa_percentual:0};
+  abrirModal(`<h1>${id?'Editar cliente':'Novo cliente'}</h1>
+    <form id="cForm">
+      <div class="f"><label>Nome / razão social</label><input id="cNome" required value="${esc(c.nome||'')}"></div>
+      <div class="row"><div class="f"><label>CNPJ/CPF</label><input id="cDoc" value="${esc(c.documento||'')}"></div>
+      <div class="f"><label>Telefone</label><input id="cTel" value="${esc(c.telefone||'')}"></div></div>
+      <div class="row"><div class="f"><label>E-mail de acesso</label><input id="cEmail" type="email" required value="${esc(c.email||'')}"></div>
+      <div class="f"><label>Sua taxa sobre cada pagamento (%)</label><input id="cTaxa" required inputmode="decimal" value="${String(c.taxa_percentual).replace('.',',')}"></div></div>
+      <div class="f"><label><input type="checkbox" id="cAtivo" style="width:auto" ${c.ativo?'checked':''}> Cliente ativo</label></div>
+      <p class="muted small">A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época (você pode ajustar ao emitir a nota).</p>
+      <button class="btn pri" id="cBtn">Salvar</button>
+    </form>
+    ${!id?'':`<p class="small muted" style="margin-top:16px">Para o cliente entrar: ele acessa o sistema, clica em <b>Primeiro acesso</b> e cria a senha com o e-mail <b>${esc(c.email)}</b>.</p>`}`);
+  $('#cForm').onsubmit=e=>{e.preventDefault(); busy($('#cBtn'),async()=>{
+    const row={nome:$('#cNome').value.trim(),documento:$('#cDoc').value.trim()||null,telefone:$('#cTel').value.trim()||null,
+      email:$('#cEmail').value.trim().toLowerCase(),taxa_percentual:parseValor($('#cTaxa').value),ativo:$('#cAtivo').checked};
+    const {error}= id ? await sb.from('prem_clientes').update(row).eq('id',id) : await sb.from('prem_clientes').insert(row);
+    if(error) throw new Error(error.code==='23505'?'Já existe um cliente com esse e-mail.':error.message);
+    toast('Cliente salvo.'); fecharModal(); recarregar();
+    if(!id) toast('Avise o cliente: acessar o sistema → "Primeiro acesso" com '+row.email);
+  });};
+}
+
+// ================= ADMIN: FATURAMENTO =================
+function vFaturamento(){
+  const conc=S.ordens.filter(o=>o.status==='concluida');
+  const porMes={}; conc.forEach(o=>{ const d=new Date(o.concluida_em), k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    porMes[k]=porMes[k]||{n:0,vol:0,fat:0}; porMes[k].n++; porMes[k].vol+=Number(o.valor_pagamento); porMes[k].fat+=Number(o.valor_taxa); });
+  const meses=Object.keys(porMes).sort().reverse();
+  const sel = S.fatMes || meses[0] || '';
+  const doMes = conc.filter(o=>{const d=new Date(o.concluida_em);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')===sel;});
+  const porCli={}; doMes.forEach(o=>{const k=o.prem_clientes?.nome||'—'; porCli[k]=porCli[k]||{n:0,vol:0,fat:0}; porCli[k].n++; porCli[k].vol+=Number(o.valor_pagamento); porCli[k].fat+=Number(o.valor_taxa);});
+  const nomeMes=k=>{ if(!k) return ''; const [y,m]=k.split('-'); return new Date(y,m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); };
+  const csv = () => { const linhas=[['Nº','Concluída em','Cliente','Descrição','Favorecido','Pagamento','Taxa %','Taxa R$','Nota R$','NF']]
+      .concat(doMes.map(o=>[o.numero,dt(o.concluida_em),o.prem_clientes?.nome,o.descricao,o.favorecido_nome,o.valor_pagamento,o.taxa_percentual,o.valor_taxa,o.valor_nota,o.numero_nota||'']));
+    return linhas.map(l=>l.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n'); };
+  $('#main').innerHTML = `
+    <div class="toolbar"><h1 style="margin:0">Faturamento</h1><div class="spacer"></div>
+      ${meses.length?`<select id="fMes">${meses.map(k=>`<option value="${k}">${nomeMes(k)}</option>`).join('')}</select><button class="btn sm" id="fCsv">Baixar CSV do mês</button>`:''}</div>
+    ${!meses.length?`<div class="card empty">O faturamento aparece aqui assim que a primeira ordem for concluída.</div>`:`
+    <div class="grid kpis">
+      <div class="card kpi"><div class="l">Faturamento · ${nomeMes(sel)}</div><div class="v">${brl(porMes[sel].fat)}</div></div>
+      <div class="card kpi"><div class="l">Volume repassado</div><div class="v">${brl(porMes[sel].vol)}</div></div>
+      <div class="card kpi"><div class="l">Ordens concluídas</div><div class="v">${porMes[sel].n}</div></div>
+      <div class="card kpi"><div class="l">Taxa média efetiva</div><div class="v">${pct(porMes[sel].vol?porMes[sel].fat/porMes[sel].vol*100:0)}</div></div>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div class="card"><h2>Por cliente · ${nomeMes(sel)}</h2><table class="tbl"><thead><tr><th>Cliente</th><th class="num">Ordens</th><th class="num">Volume</th><th class="num">Faturamento</th></tr></thead><tbody>
+        ${Object.entries(porCli).sort((a,b)=>b[1].fat-a[1].fat).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${v.n}</td><td class="num">${brl(v.vol)}</td><td class="num"><b>${brl(v.fat)}</b></td></tr>`).join('')}</tbody></table></div>
+      <div class="card"><h2>Mês a mês</h2><table class="tbl"><thead><tr><th>Mês</th><th class="num">Ordens</th><th class="num">Volume</th><th class="num">Faturamento</th></tr></thead><tbody>
+        ${meses.map(k=>`<tr><td>${nomeMes(k)}</td><td class="num">${porMes[k].n}</td><td class="num">${brl(porMes[k].vol)}</td><td class="num"><b>${brl(porMes[k].fat)}</b></td></tr>`).join('')}</tbody></table></div>
+    </div>`}`;
+  if(meses.length){
+    $('#fMes').value=sel; $('#fMes').onchange=e=>{S.fatMes=e.target.value; vFaturamento();};
+    $('#fCsv').onclick=()=>{ const b=new Blob(['﻿'+csv()],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`faturamento-${sel}.csv`; a.click(); };
+  }
+}
+
+iniciar();
+</script>
+</body>
+</html>
