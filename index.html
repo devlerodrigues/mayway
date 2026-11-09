@@ -212,8 +212,11 @@ $('#lgForm').onsubmit = e => { e.preventDefault(); busy($('#lgBtn'), async ()=>{
   if(!password || password.length<6) return msg('A senha precisa ter pelo menos 6 caracteres.');
   if(lgMode==='signup'){
     const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.href.split('#')[0]}});
-    if(error) return msg(error.message);
-    if(!data.session) return msg('Conta criada! Confirme pelo link enviado ao seu e-mail e depois entre.',true);
+    if(error) return msg(error.message.includes('already')?'Este e-mail já tem acesso. Use "Entrar" com a sua senha ou "Esqueci a senha".':error.message);
+    if(data.user && Array.isArray(data.user.identities) && data.user.identities.length===0){
+      setLgMode('login'); return msg('Este e-mail já tem acesso. Entre com a sua senha ou clique em "Esqueci a senha" para criar uma nova.');
+    }
+    if(!data.session) return msg('Conta criada! Confirme pelo link enviado ao seu e-mail (veja também o spam) e depois entre.',true);
     return iniciar();
   }
   const {error}=await sb.auth.signInWithPassword({email,password});
