@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f5c4d">
+<meta name="theme-color" content="#FAF7F3">
 <meta name="description" content="Mayway Soluções – campanhas de incentivo e pagamento de premiações">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/favicon-64.png">
@@ -14,31 +14,38 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Mayway Soluções · Premiações</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Lato:wght@400;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
-  --bg:#f5f6f8; --card:#fff; --ink:#14181f; --muted:#667085; --line:#e4e7ec;
-  --brand:#0f5c4d; --brand-2:#e7f3f0; --warn:#b54708; --warn-bg:#fef0c7;
-  --info:#175cd3; --info-bg:#d1e9ff; --ok:#067647; --ok-bg:#dcfae6; --bad:#b42318; --bad-bg:#fee4e2;
-  --violet:#5925dc; --violet-bg:#ebe9fe; --r:12px;
+  /* identidade MAY WAY (guia nov/2026) */
+  --mw-porcelana:#FAF7F3; --mw-papel:#FFFCF9; --mw-areia:#F0E7DF; --mw-tinta:#263C46; --mw-vermelho:#9D2941;
+  --mw-azul-mar:#3F7183; --mw-rosa:#E9ADA1; --mw-linha:#DED3CB; --mw-cinza:#6B7475;
+  --bg:var(--mw-porcelana); --card:var(--mw-papel); --ink:var(--mw-tinta); --muted:#5F6869; --line:var(--mw-linha);
+  --brand:var(--mw-vermelho); --brand-2:#F7E6E2; --warn:#8A4B00; --warn-bg:#F8EBD3;
+  --info:#2F5E6F; --info-bg:#E2ECEF; --ok:#2F6B4F; --ok-bg:#E3EFE7; --bad:#9D2941; --bad-bg:#F7E1E3;
+  --violet:#5B4A7A; --violet-bg:#ECE7F2; --r:12px;
+  --serif:'EB Garamond',Georgia,'Times New Roman',serif;
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+body{margin:0;font-family:Lato,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14.5px}
+h1{font-family:var(--serif);font-weight:500;letter-spacing:-.005em}
+.kpi .v{font-family:var(--serif);font-weight:600}
 button,input,select,textarea{font:inherit}
 .hidden{display:none!important}
 /* layout */
 header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
 .bar{max-width:1320px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:12px 20px}
-.logo{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
-.logo i{width:28px;height:28px;border-radius:8px;background:var(--brand);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:14px}
+.logo{font-family:var(--serif);font-weight:600;font-size:21px;display:flex;align-items:center;gap:9px;color:var(--ink)}
+.logo i{width:30px;height:30px;border-radius:8px;background:var(--brand);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:19px;font-family:var(--serif);font-weight:500;line-height:1}
 nav{display:flex;gap:4px;margin-left:12px}
 nav button{background:none;border:0;padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer;font-weight:500}
 nav button.on{background:var(--brand-2);color:var(--brand)}
 .spacer{flex:1}
 .who{color:var(--muted);font-size:13px}
 main{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
-h1{font-size:20px;margin:0 0 16px}
+h1{font-size:27px;margin:0 0 16px;line-height:1.15}
 h2{font-size:15px;margin:0 0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px}
 .grid{display:grid;gap:16px}
@@ -48,7 +55,7 @@ h2{font-size:15px;margin:0 0 12px}
 .kpi .s{color:var(--muted);font-size:12px;margin-top:4px}
 @media(max-width:860px){.kpis{grid-template-columns:repeat(2,1fr)}}
 /* buttons */
-.btn{border:1px solid var(--line);background:#fff;padding:9px 14px;border-radius:8px;cursor:pointer;font-weight:500;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.btn{border:1px solid var(--line);background:var(--card);padding:9px 14px;border-radius:8px;cursor:pointer;font-weight:500;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
 .btn:hover{background:#f9fafb}
 .btn.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
 .btn.pri:hover{filter:brightness(1.08)}
@@ -132,20 +139,20 @@ header{padding-top:env(safe-area-inset-top)}
 @media(max-width:700px){
   body{font-size:15px}
   .bar{padding:10px 14px;gap:10px;flex-wrap:nowrap}
-  .logo{font-size:15px}
+  .logo{font-size:18px}
   .who{display:none}
   nav{position:fixed;left:0;right:0;bottom:0;z-index:15;margin:0;background:#fff;border-top:1px solid var(--line);
       display:flex;overflow-x:auto;gap:2px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(16,24,40,.06)}
-  nav button{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:10px 6px;font-size:12.5px}
+  nav button{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:10px 4px;font-size:12px}
   nav{overflow:hidden!important}
   nav .lg{display:none} nav .sh{display:inline}
-  nav .nav-mais{flex:0 0 auto;padding:10px 8px} nav .nav-mais .car{display:none}
+  nav .nav-mais{flex:0 0 auto;padding:10px 6px} nav .nav-mais .car{display:none}
   nav:empty{display:none}
   .nav-menu{left:8px!important;right:8px;top:auto!important;max-width:none;bottom:calc(64px + env(safe-area-inset-bottom));border-radius:14px}
   .nav-menu button{padding:13px 14px;font-size:15px}
   .btn-sair{display:none}
   main{padding:16px 12px calc(90px + env(safe-area-inset-bottom))}
-  h1{font-size:19px}
+  h1{font-size:24px}
   .card{padding:14px;border-radius:12px}
   .kpis{grid-template-columns:1fr 1fr;gap:10px}
   .kpi .v{font-size:18px}
@@ -516,7 +523,7 @@ function tabelaOrdens(lista, admin){
   if(!lista.length) return `<div class="empty">Nenhuma ordem por aqui.</div>`;
   return `<div class="tblwrap"><table class="tbl"><thead><tr>
     <th>Nº</th><th>Data</th>${admin?'<th>Cliente</th>':''}<th>Descrição / favorecido</th>
-    <th class="num">Pagamento</th>${admin?'<th class="num">Taxa</th>':''}<th class="num">Valor da nota</th><th>Status</th></tr></thead><tbody>
+    <th class="num">Pagamento</th>${admin?'<th class="num">Taxa</th>':''}<th class="num">Valor total</th><th>Status</th></tr></thead><tbody>
     ${lista.map(o=>`<tr class="click" data-id="${o.id}">
       <td>#${o.numero}</td><td>${dt(o.created_at)}</td>${admin?`<td>${esc(o.prem_clientes?.nome)}</td>`:''}
       <td><div>${esc(o.descricao)}</div><div class="muted small">${esc(o.favorecido_nome)}${o.vencimento?' · vence '+dIso(o.vencimento):''}</div></td>
@@ -783,7 +790,7 @@ function calcNova(){
   let v=0, teds=0; NOVA.itens.forEach(i=>{ const val=parseValor(i.valor); v+=val; const f=S.favs.find(x=>x.id===i.fav); if(f&&f.forma_pagamento==='ted') teds++; });
   const tx=Math.round(v*t)/100, ct=teds*S.custoTed;
   $('#nCalc').innerHTML=`<div>Total a pagar<b>${brl(v)}</b></div><div>Taxa de serviço (${pct(t)})<b>${brl(tx)}</b></div>`+
-    `<div>Custo TED (${teds} × ${brl(S.custoTed)})<b>${brl(ct)}</b></div><div>Valor da nota<b>${brl(v+tx+ct)}</b></div>`;
+    `<div>Custo TED (${teds} × ${brl(S.custoTed)})<b>${brl(ct)}</b></div><div>Valor total<b>${brl(v+tx+ct)}</b></div>`;
 }
 
 // ================= FAVORECIDOS =================
