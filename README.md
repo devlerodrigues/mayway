@@ -1,6 +1,8 @@
 # Mayway Soluções: sistema de ordens de pagamento de premiações
 
-**Link do sistema:** https://devlerodrigues.github.io/mayway/  (código: github.com/devlerodrigues/mayway)
+**Link do sistema:** https://sistema.mayway.com.br/  (código: github.com/devlerodrigues/mayway; o link antigo devlerodrigues.github.io/mayway redireciona)
+
+**Domínio:** mayway.com.br registrado no Registro.br em 09/11/2026 (titular hoje: CPF do Leandro; passar para o CNPJ da Mayway), expira 09/11/2027. DNS do Registro.br em modo avançado: CNAME `sistema` → `devlerodrigues.github.io`. Arquivo `CNAME` no repositório + Enforce HTTPS ligado no GitHub Pages. `mayway.com.br` (raiz) reservado para a futura landing page. Chave PIX da Mayway: maywaysolucoes@gmail.com (`prem_config.contratada_pix`).
 
 ## O fluxo
 -1. **Contrato (primeiro acesso):** com a exigência ligada (menu Contrato do admin), o cliente só usa o sistema depois de assinar eletronicamente o contrato. O texto é montado no servidor a partir do modelo (`prem_contrato_modelo`, versão 1) com dados do cliente, taxa e TED; o aceite grava texto assinado, hash SHA-256, representante, CPF, login e data (`prem_contrato_aceites`). Antes de ligar, preencher os dados da nossa empresa no menu Contrato.
@@ -48,7 +50,7 @@ Status: Enviar cobrança → Aguardando pagamento do cliente → Pagar favorecid
 **Vercel / Netlify:** arraste a pasta com o `index.html` no painel (Netlify Drop) ou importe o repositório.
 
 Depois de publicar, no Supabase → Authentication → URL Configuration:
-- **Site URL** e **Redirect URLs**: adicione o link do site (necessário para os e-mails de confirmação e de "esqueci a senha").
+- **Redirect URLs** (feito em 10/11/2026): `https://sistema.mayway.com.br/**` e `https://devlerodrigues.github.io/mayway/**`. O **Site URL** continua `http://localhost:3000` porque o projeto é compartilhado com o Alter: não trocar sem ver o Alter. A função `prem-push` abre as notificações em https://sistema.mayway.com.br/.
 - Como o Alter usa o mesmo login, confira se **Allow new users to sign up** está ligado (é por aí que o cliente cria a senha no "Primeiro acesso").
 
 ## Como liberar um cliente
