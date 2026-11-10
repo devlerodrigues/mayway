@@ -40,9 +40,9 @@ Status: Enviar cobrança → Aguardando pagamento do cliente → Pagar favorecid
 - Ao mudar telas importantes, regravar os vídeos (roteiro de gravação em demo com dados fictícios).
 
 ## Onde estão os dados
-- Supabase, projeto **Sistema Alter**, tabelas `prem_*` (isoladas das tabelas do Alter).
+- Supabase, projeto `cqfouldafqrtvjecespw` (ainda chamado "Sistema Alter" no painel), tabelas `prem_*`. Desde 10/11/2026 o projeto é **só do Mayway**: o Alter (dados de teste) foi removido — 28 tabelas, schema `private`, gatilho `on_auth_user_created` e 3 usuários. Backup: arquivo `backup-sistema-alter-2026-11-10.json` baixado no Chrome do Leandro (estrutura SQL + dados + usuários) e cópia no schema `backup_alter` do próprio banco (não exposto na API; pode ser apagado depois). Edge function `alter-backup` desativada (responde 410).
 - Arquivos no bucket privado `premiacao` (pastas por cliente/ordem, até 15 MB por arquivo).
-- Cada cliente só vê as próprias ordens. Usuários do Alter não enxergam nada do Premiação.
+- Cada cliente só vê as próprias ordens.
 - Admin: leandro160490@gmail.com (para adicionar outro admin: inserir o e-mail na tabela `prem_admin_emails`).
 
 ## Publicar o site (grátis)
@@ -50,7 +50,7 @@ Status: Enviar cobrança → Aguardando pagamento do cliente → Pagar favorecid
 **Vercel / Netlify:** arraste a pasta com o `index.html` no painel (Netlify Drop) ou importe o repositório.
 
 Depois de publicar, no Supabase → Authentication → URL Configuration:
-- **Redirect URLs** (feito em 10/11/2026): `https://sistema.mayway.com.br/**` e `https://devlerodrigues.github.io/mayway/**`. O **Site URL** continua `http://localhost:3000` porque o projeto é compartilhado com o Alter: não trocar sem ver o Alter. A função `prem-push` abre as notificações em https://sistema.mayway.com.br/.
+- **Redirect URLs** (feito em 10/11/2026): `https://sistema.mayway.com.br/**` e `https://devlerodrigues.github.io/mayway/**`. O **Site URL** está `http://localhost:3000`; agora que o projeto é só do Mayway pode virar `https://sistema.mayway.com.br`. A função `prem-push` abre as notificações em https://sistema.mayway.com.br/.
 - Como o Alter usa o mesmo login, confira se **Allow new users to sign up** está ligado (é por aí que o cliente cria a senha no "Primeiro acesso").
 
 ## Como liberar um cliente
