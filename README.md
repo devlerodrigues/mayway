@@ -25,6 +25,10 @@ Status: Enviar cobrança → Aguardando pagamento do cliente → Pagar favorecid
 - Em 09/11/2026 a Receita ainda mostrava "Mayara Castro Corretora de Seguros LTDA", só com CNAE 66.22-3-00. Alteração de nome e atividades em andamento.
 - Dados gravados em `prem_config` e no contrato (doc). **Assinatura obrigatória ligada em 09/11/2026** a pedido do Leandro (alteração na Junta/Receita ainda em andamento: conferir o nome na Receita quando sair).
 
+## Identidade visual (10/11/2026)
+- Aplicada a direção do guia MAY WAY (Mayara Castro, nov/2026) no sistema e na landing page (https://claude.ai/artifact/A9oYPJLnhBf8SesehRsK4R): paleta porcelana #FAF7F3, papel #FFFCF9, areia #F0E7DF, tinta #263C46, vermelho #9D2941 (só CTAs/destaques), azul-mar #3F7183, rosa #E9ADA1, linha #DED3CB, cinza #6B7475; EB Garamond (títulos) + Lato (texto). Ícones do app refeitos (M em serifa sobre vermelho).
+- O símbolo M/W em estudo NÃO foi usado: o guia diz que é da identidade pessoal MAY WAY e não deve virar marca da nova empresa sem decisão específica.
+
 ## App no celular
 - Sistema com nome Mayway Soluções, layout para celular (menu embaixo, tabelas viram cartões, janelas em tela cheia) e instalável como app (manifest + service worker + ícones em `icons/`). iPhone: Safari → Compartilhar → Adicionar à Tela de Início. Android: Chrome → Instalar app (o próprio sistema mostra o botão).
 
