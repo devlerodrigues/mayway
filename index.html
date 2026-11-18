@@ -1065,18 +1065,21 @@ const CSS_CONTRATO = 'max-height:52vh;overflow:auto;border:1px solid var(--line)
 function vContratoGate(){
   show('vApp'); $('#nav').innerHTML='';
   const c=S.cliente||{};
+  const pf = soDig(c.documento||'').length===11;
   $('#main').innerHTML = `<div class="card" style="max-width:900px;margin:0 auto">
     <h1>Contrato de prestação de serviços</h1>
     <p class="muted" style="margin-top:0">Para começar a usar o sistema, confira seus dados, leia o contrato e assine eletronicamente. Leva 2 minutos.</p>
-    <div class="row"><div class="f"><label>Empresa</label><input value="${esc(c.nome||'')}" disabled></div><div class="f"><label>CNPJ</label><input value="${esc(c.documento||'')}" disabled></div></div>
-    <div class="f"><label>Endereço completo da empresa (rua, nº, bairro, cidade/UF, CEP)</label><input id="ctEnd" value="${esc(c.endereco||'')}"></div>
-    <div class="row"><div class="f"><label>Nome do representante legal</label><input id="ctRep" value="${esc(c.rep_nome||'')}"></div>
-      <div class="f"><label>CPF do representante</label><input id="ctCpf" inputmode="numeric" value="${esc(fmtDoc(c.rep_cpf||''))}"></div></div>
+    <div class="row"><div class="f"><label>${pf?'Nome':'Empresa'}</label><input value="${esc(c.nome||'')}" disabled></div><div class="f"><label>${pf?'CPF':'CNPJ'}</label><input value="${esc(fmtDoc(c.documento||''))}" disabled></div></div>
+    <div class="f"><label>${pf?'Seu endereço completo':'Endereço completo da empresa'} (rua, nº, bairro, cidade/UF, CEP)</label><input id="ctEnd" value="${esc(c.endereco||'')}"></div>
+    ${pf?'':`<div class="row"><div class="f"><label>Nome do representante legal</label><input id="ctRep" value="${esc(c.rep_nome||'')}"></div>
+      <div class="f"><label>CPF do representante</label><input id="ctCpf" inputmode="numeric" value="${esc(fmtDoc(c.rep_cpf||''))}"></div></div>`}
     <button class="btn" id="ctPrev">Gerar contrato com meus dados</button>
     <div id="ctBox" style="margin-top:16px"></div>
-    <p class="small muted" style="margin-top:14px">Dados incorretos de empresa ou CNPJ? Fale com a gente antes de assinar. <button class="link" onclick="sair()">Sair</button></p>
+    <p class="small muted" style="margin-top:14px">Dados incorretos de ${pf?'nome ou CPF':'empresa ou CNPJ'}? Fale com a gente antes de assinar. <button class="link" onclick="sair()">Sair</button></p>
   </div>`;
-  const dados=()=>{ const rep=$('#ctRep').value.trim(), cpf=soDig($('#ctCpf').value), end=$('#ctEnd').value.trim();
+  const dados=()=>{ const end=$('#ctEnd').value.trim();
+    if(pf){ if(!end) throw new Error('Informe seu endereço.'); return {rep:c.nome||'', cpf:soDig(c.documento||''), end}; }
+    const rep=$('#ctRep').value.trim(), cpf=soDig($('#ctCpf').value);
     if(!end) throw new Error('Informe o endereço da empresa.'); if(!rep) throw new Error('Informe o nome do representante legal.');
     if(!cpfValido(cpf)) throw new Error('CPF do representante inválido.'); return {rep,cpf,end}; };
   $('#ctPrev').onclick=()=>busy($('#ctPrev'),async()=>{
@@ -1084,7 +1087,7 @@ function vContratoGate(){
     const {data,error}=await sb.rpc('prem_contrato_render',{p_cliente:S.clienteId,p_rep_nome:d.rep,p_rep_cpf:fmtDoc(d.cpf),p_endereco:d.end});
     if(error) throw error;
     $('#ctBox').innerHTML=`<div style="${CSS_CONTRATO}">${mdHtml(data.texto)}</div>
-      <div class="f" style="margin-top:14px"><label style="font-weight:500"><input type="checkbox" id="ctOk" style="width:auto"> Li o contrato acima e, como representante legal de ${esc(c.nome||'')}, concordo com todas as cláusulas.</label></div>
+      <div class="f" style="margin-top:14px"><label style="font-weight:500"><input type="checkbox" id="ctOk" style="width:auto"> Li o contrato acima e${pf?'':`, como representante legal de ${esc(c.nome||'')},`} concordo com todas as cláusulas.</label></div>
       <button class="btn pri" id="ctSign">Assinar eletronicamente</button>
       <p class="small muted">Ficam registrados data, hora, seu e-mail de acesso e uma impressão digital (hash SHA-256) do texto assinado.</p>`;
     $('#ctSign').onclick=()=>busy($('#ctSign'),async()=>{
@@ -1157,7 +1160,7 @@ const MANUAL_CLIENTE = [
 ];
 const MANUAL_ADMIN = [
  ['Painel', ['Mostra o faturamento do mês (suas taxas de ordens concluídas), o valor em andamento, o volume pago e quantas coisas dependem de você.', 'A <b>Fila de ação</b> lista ordens para emitir nota e para pagar.']],
- ['Clientes', ['Menu <b>Clientes</b> → <b>+ Novo cliente</b>: nome, CNPJ, e-mail de acesso e a taxa (%).', 'Avise o cliente: ele abre o link, clica em <b>Primeiro acesso</b> e cria a senha com esse e-mail.', 'A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época.']],
+ ['Clientes', ['Menu <b>Clientes</b> → <b>+ Novo cliente</b>: nome, CPF (pessoa física) ou CNPJ (empresa), e-mail de acesso e a taxa (%).', 'Avise o cliente: ele abre o link, clica em <b>Primeiro acesso</b> e cria a senha com esse e-mail.', 'A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época.']],
  ['Equipe', ['Menu <b>Equipe</b> → <b>+ Adicionar pessoa</b> para sócios e funcionários.', 'A pessoa entra pelo mesmo link com <b>Primeiro acesso</b> e tem acesso total de administrador.']],
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
@@ -1277,7 +1280,7 @@ function vClientes(){
   $('#main').innerHTML = `
     <div class="toolbar"><h1 style="margin:0">Clientes</h1><div class="spacer"></div><button class="btn pri" onclick="formCliente()">+ Novo cliente</button></div>
     <div class="card">${S.clientes.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Cliente</th><th>E-mail de acesso</th><th class="num">Taxa</th><th class="num">Concluídas</th><th class="num">Faturado</th><th>Status</th></tr></thead><tbody>
-      ${S.clientes.map(c=>{const [n,f]=stats(c.id); return `<tr class="click" data-cli="${c.id}"><td><b>${esc(c.nome)}</b><div class="muted small">${esc(c.documento||'')}</div></td><td>${esc(c.email)}</td>
+      ${S.clientes.map(c=>{const [n,f]=stats(c.id); return `<tr class="click" data-cli="${c.id}"><td><b>${esc(c.nome)}</b><div class="muted small">${soDig(c.documento||'').length===11?'Pessoa física · CPF ':soDig(c.documento||'').length===14?'Empresa · CNPJ ':''}${esc(fmtDoc(c.documento||''))}</div></td><td>${esc(c.email)}</td>
         <td class="num">${pct(c.taxa_percentual)}</td><td class="num">${n}</td><td class="num">${brl(f)}</td><td>${c.ativo?'<span class="pill st-concluida">Ativo</span>':'<span class="pill st-cancelada">Inativo</span>'}</td></tr>`;}).join('')}
       </tbody></table></div>`:`<div class="empty">Cadastre seu primeiro cliente. Ele vai entrar no sistema com o e-mail que você informar aqui.</div>`}</div>`;
   document.querySelectorAll('[data-cli]').forEach(tr=>tr.onclick=()=>formCliente(tr.dataset.cli));
@@ -1286,8 +1289,8 @@ function formCliente(id){
   const c = S.clientes.find(x=>x.id===id) || {ativo:true, taxa_percentual:0};
   abrirModal(`<h1>${id?'Editar cliente':'Novo cliente'}</h1>
     <form id="cForm">
-      <div class="f"><label>Nome / razão social</label><input id="cNome" required value="${esc(c.nome||'')}"></div>
-      <div class="row"><div class="f"><label>CNPJ/CPF</label><input id="cDoc" value="${esc(c.documento||'')}"></div>
+      <div class="f"><label>Nome (pessoa física) ou razão social (empresa)</label><input id="cNome" required value="${esc(c.nome||'')}"></div>
+      <div class="row"><div class="f"><label>CPF ou CNPJ</label><input id="cDoc" inputmode="numeric" placeholder="000.000.000-00 ou 00.000.000/0000-00" value="${esc(fmtDoc(c.documento||''))}"><div class="small muted" id="cDocTipo" style="margin-top:4px"></div></div>
       <div class="f"><label>Telefone</label><input id="cTel" value="${esc(c.telefone||'')}"></div></div>
       <div class="row"><div class="f"><label>E-mail de acesso</label><input id="cEmail" type="email" required value="${esc(c.email||'')}"></div>
       <div class="f"><label>Sua taxa sobre cada pagamento (%)</label><input id="cTaxa" required inputmode="decimal" value="${String(c.taxa_percentual).replace('.',',')}"></div></div>
@@ -1296,8 +1299,12 @@ function formCliente(id){
       <button class="btn pri" id="cBtn">Salvar</button>
     </form>
     ${!id?'':`<p class="small muted" style="margin-top:16px">Para o cliente entrar: ele acessa o sistema, clica em <b>Primeiro acesso</b> e cria a senha com o e-mail <b>${esc(c.email)}</b>.</p>`}`);
+  const tipoDoc=()=>{ const d=soDig($('#cDoc').value); $('#cDocTipo').textContent = d.length===11?(cpfValido(d)?'Pessoa física (CPF)':'CPF inválido'):d.length===14?(cnpjValido(d)?'Empresa (CNPJ)':'CNPJ inválido'):''; };
+  $('#cDoc').oninput=tipoDoc; $('#cDoc').onblur=()=>{ const d=soDig($('#cDoc').value); if(d.length===11||d.length===14) $('#cDoc').value=fmtDoc(d); }; tipoDoc();
   $('#cForm').onsubmit=e=>{e.preventDefault(); busy($('#cBtn'),async()=>{
-    const row={nome:$('#cNome').value.trim(),documento:$('#cDoc').value.trim()||null,telefone:$('#cTel').value.trim()||null,
+    const doc=soDig($('#cDoc').value);
+    if(doc && !(doc.length===11?cpfValido(doc):doc.length===14?cnpjValido(doc):false)) throw new Error('CPF ou CNPJ inválido. Confira os números.');
+    const row={nome:$('#cNome').value.trim(),documento:doc?fmtDoc(doc):null,telefone:$('#cTel').value.trim()||null,
       email:$('#cEmail').value.trim().toLowerCase(),taxa_percentual:parseValor($('#cTaxa').value),ativo:$('#cAtivo').checked};
     const {error}= id ? await sb.from('prem_clientes').update(row).eq('id',id) : await sb.from('prem_clientes').insert(row);
     if(error) throw new Error(error.code==='23505'?'Já existe um cliente com esse e-mail.':error.message);
