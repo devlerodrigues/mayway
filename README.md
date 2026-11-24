@@ -70,7 +70,8 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 ## Cancelar e excluir campanha
 - Cliente (só as próprias) e admin, no detalhe da campanha.
 - **Cancelar** (`prem_cancelar_campanha`, motivo opcional): status `cancelada`, não aceita novas ordens, não repete nem edita; ordens em andamento seguem. Notifica a outra parte.
-- **Excluir** (`prem_excluir_campanha`): apaga de vez, só se não houver nenhuma ordem ligada (nem cancelada).
+- **Excluir** (`prem_excluir_campanha`): cliente só sem ordens; admin também exclui campanha **cancelada** cujas ordens não tiveram dinheiro (`prem_ordem_tem_dinheiro`), apagando essas ordens junto.
+- **Arquivar** (`prem_arquivar_campanha`, coluna `arquivada_em`, admin): canceladas, reprovadas ou encerradas; Campanhas → Arquivadas.
 
 ## Senhas
 - Login: "Esqueci minha senha" logo abaixo do campo de senha; olho para mostrar/esconder a senha.
