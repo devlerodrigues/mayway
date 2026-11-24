@@ -80,3 +80,7 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 
 ## Cobrança automática
 - `prem_config.cobranca_automatica` (padrão ligado; menu Contrato). Com a chave PIX cadastrada, `prem_criar_ordem` já cria a ordem em `nota_emitida` (cobrança enviada) com a taxa do cadastro do cliente; a tela do PIX abre na hora para o cliente. O admin recebe "Nova ordem… cobrança enviada automaticamente". Desligado, volta ao fluxo antigo (admin revisa a taxa e clica Enviar cobrança).
+
+## Excluir e arquivar ordens (admin)
+- **Excluir** (`prem_excluir_ordem`): só se não houve comprovante do cliente, pagamento a favorecido, comprovante de pagamento nem NFS-e (status enviada, nota_emitida ou cancelada). Apaga ordem, itens, histórico e notificações.
+- **Arquivar** (`prem_arquivar_ordem`, coluna `arquivada_em`): só concluídas ou canceladas. Some das listas (admin e cliente) e continua no faturamento; Ordens → Ver arquivadas → Desarquivar.

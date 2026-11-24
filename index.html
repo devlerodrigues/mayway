@@ -538,7 +538,9 @@ function vPainel(){
 // ================= ADMIN: ORDENS =================
 function vOrdens(){
   const f=S.filtro;
+  const nArq=S.ordens.filter(o=>o.arquivada_em).length;
   let lista = S.ordens.filter(o=>{
+    if(!!o.arquivada_em !== !!S.verArq) return false;
     if(f.status==='acao' && !['enviada','pago_cliente','favorecidos_pagos'].includes(o.status)) return false;
     if(f.status && f.status!=='acao' && o.status!==f.status) return false;
     if(f.cliente && o.cliente_id!==f.cliente) return false;
@@ -552,11 +554,13 @@ function vOrdens(){
         <select id="fCli"><option value="">Todos os clientes</option>${S.clientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>
         <input id="fQ" placeholder="Buscar descrição, favorecido, nº…" value="${esc(f.q)}">
         <span class="muted small">${lista.length} ordens</span>
+        ${nArq||S.verArq?`<button class="btn sm" id="fArq">${S.verArq?'Voltar às ordens ativas':'Ver arquivadas ('+nArq+')'}</button>`:''}
       </div>
       ${tabelaOrdens(lista, true)}
     </div>`;
   $('#fSt').value=f.status; $('#fCli').value=f.cliente;
   $('#fSt').onchange=e=>{f.status=e.target.value;vOrdens();};
+  $('#fArq') && ($('#fArq').onclick=()=>{ S.verArq=!S.verArq; if(S.verArq) f.status=''; vOrdens(); });
   $('#fCli').onchange=e=>{f.cliente=e.target.value;vOrdens();};
   $('#fQ').onchange=e=>{f.q=e.target.value;vOrdens();};
   ligarLinhas();
@@ -665,6 +669,13 @@ async function detalhe(id){
     <h2 style="margin-top:20px">Histórico</h2>
     <ul class="tl">${(hist||[]).map(h=>`<li><span>${esc(HST[h.status]||h.status)}${h.observacao?' — '+esc(h.observacao):''}</span><span class="muted">${dth(h.created_at)}</span></li>`).join('')}</ul>
     ${podeCancelar?`<div style="margin-top:18px;display:flex;gap:8px;align-items:center"><input id="cMot" placeholder="Motivo do cancelamento" style="max-width:320px"><button class="btn danger sm" id="cBtn">Cancelar ordem</button></div>`:''}
+    ${admin?(()=>{ const semDinheiro=['enviada','nota_emitida','cancelada'].includes(o.status) && !o.anexo_comprovante_cliente && !o.anexo_comprovante_pagamento && !o.numero_nota && !o.anexo_nota && !(itens||[]).some(i=>i.pago_em);
+      const podeArq=['concluida','cancelada'].includes(o.status);
+      if(!semDinheiro && !podeArq && !o.arquivada_em) return '';
+      return `<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${o.arquivada_em?`<span class="pill st-cancelada">Arquivada em ${dt(o.arquivada_em)}</span><button class="btn sm" id="oDesarq">Desarquivar</button>`:podeArq?`<button class="btn sm" id="oArq">Arquivar ordem</button>`:''}
+        ${semDinheiro?`<button class="btn sm danger" id="oExc">Excluir ordem</button>`:''}
+        <span class="muted small">${semDinheiro?'Sem pagamento nem nota: pode ser excluída de vez.':'Já teve pagamento ou nota: só pode ser arquivada (sai das listas, continua no faturamento).'}</span></div>`; })():''}
   `);
   document.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
   document.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copiar(b.dataset.cp,'Copiado.'));
@@ -711,6 +722,12 @@ async function detalhe(id){
       const {error}=await sb.rpc('prem_emitir_nfse',{p_ordem:o.id,p_numero_nota:$('#aNum').value.trim()||null,p_anexo:path});
       if(error) throw error; toast('NFS-e enviada. Ordem concluída.'); fecharModal(); recarregar(); });
   }
+  $('#oArq') && ($('#oArq').onclick=()=>busy($('#oArq'),async()=>{ const {error}=await sb.rpc('prem_arquivar_ordem',{p_ordem:o.id,p_arquivar:true}); if(error) throw error; toast('Ordem arquivada. Ela continua no faturamento.'); fecharModal(); recarregar(); }));
+  $('#oDesarq') && ($('#oDesarq').onclick=()=>busy($('#oDesarq'),async()=>{ const {error}=await sb.rpc('prem_arquivar_ordem',{p_ordem:o.id,p_arquivar:false}); if(error) throw error; toast('Ordem desarquivada.'); fecharModal(); recarregar(); }));
+  $('#oExc') && ($('#oExc').onclick=()=>{ abrirModal(`<h1>Excluir a ordem #${o.numero}?</h1><p>A ordem <b>${esc(o.descricao||'')}</b> (${brl(o.valor_nota)}) será apagada de vez, com favorecidos e histórico. Isso não pode ser desfeito.</p>
+      <button class="btn danger" id="oExcOk">Sim, excluir</button> <button class="btn" id="oExcVolta">Voltar</button>`);
+    $('#oExcVolta').onclick=()=>detalhe(o.id);
+    $('#oExcOk').onclick=()=>busy($('#oExcOk'),async()=>{ const {error}=await sb.rpc('prem_excluir_ordem',{p_ordem:o.id}); if(error) throw error; toast('Ordem excluída.'); fecharModal(); recarregar(); }); });
   if(podeCancelar) $('#cBtn').onclick=()=>busy($('#cBtn'),async()=>{
     const m=$('#cMot').value.trim(); if(!m) throw new Error('Informe o motivo do cancelamento.');
     const {error}=await sb.rpc('prem_cancelar',{p_ordem:o.id,p_motivo:m}); if(error) throw error;
@@ -1313,6 +1330,7 @@ const MANUAL_ADMIN = [
  ['Clientes', ['Menu <b>Clientes</b> → <b>+ Novo cliente</b>: nome, CPF (pessoa física) ou CNPJ (empresa), e-mail de acesso e a taxa (%).', 'Avise o cliente: ele abre o link, clica em <b>Primeiro acesso</b> e cria a senha com esse e-mail.', 'A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época.']],
  ['Equipe', ['Menu <b>Equipe</b> → <b>+ Adicionar pessoa</b> para sócios e funcionários.', 'A pessoa entra pelo mesmo link com <b>Primeiro acesso</b> e tem acesso total de administrador.']],
  ['Definir senha de cliente ou da equipe', ['Ninguém consegue ver a senha de outra pessoa: ela fica guardada embaralhada.', 'Para dar uma senha nova: <b>Clientes</b> → abra o cliente → <b>Definir nova senha</b> (ou <b>Equipe</b> → <b>Definir senha</b>).', 'O sistema sugere uma senha forte; clique em <b>Salvar e copiar mensagem</b> e mande para a pessoa em conversa privada.', 'Se o cliente ainda não fez o primeiro acesso, o acesso já é criado com essa senha.']],
+ ['Excluir ou arquivar ordens', ['Abra a ordem e role até o fim.', '<b>Excluir ordem</b>: só aparece se não houve pagamento do cliente, pagamento a favorecido nem nota fiscal. Apaga de vez.', '<b>Arquivar ordem</b>: para ordens concluídas ou canceladas. Some das listas (inclusive da tela do cliente), mas continua no faturamento.', 'Para ver ou desarquivar: <b>Ordens</b> → <b>Ver arquivadas</b>.']],
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
  ['Pagar os favorecidos', ['Quando o cliente envia o comprovante, a ordem vira <b>Pagar favorecido</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido.', 'Faça os pagamentos, anexe o(s) comprovante(s) em um arquivo e clique em <b>Concluir ordem</b>. A taxa entra no faturamento.']],
@@ -1421,7 +1439,7 @@ function vMinhas(){
     ${avisoAj}${avisoCamp}${avisoRen}
     ${pend.length?`<div class="card" style="margin-bottom:16px;border-color:var(--info)"><h2>Você tem ${pend.length} cobrança(s) para pagar</h2>
       <p class="muted" style="margin:0">Abra a ordem, pague pelo PIX (QR Code ou copia e cola) e anexe o comprovante para liberarmos os pagamentos.</p></div>`:''}
-    <div class="card">${tabelaOrdens(S.ordens,false)}</div>`;
+    <div class="card">${tabelaOrdens(S.ordens.filter(o=>!o.arquivada_em),false)}</div>`;
   ligarLinhas();
 }
 
