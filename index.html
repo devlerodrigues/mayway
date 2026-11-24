@@ -807,7 +807,10 @@ function vNova(){
       p_vencimento:$('#nVenc').value||null, p_observacao:$('#nObs').value.trim()||null, p_anexo:anexo,
       p_itens:itens.map(i=>({favorecido_id:i.fav, valor:parseValor(i.valor)})) });
     if(error) throw error;
-    NOVA.itens=[]; toast('Ordem enviada!'); await carregar(); ir(S.papel==='admin'?'ordens':'minhas');
+    NOVA.itens=[]; await carregar(); ir(S.papel==='admin'?'ordens':'minhas');
+    const nova=S.ordens.find(o=>o.id===id);
+    if(nova?.status==='nota_emitida'){ toast(S.papel==='admin'?'Ordem enviada e cobrança gerada.':'Ordem enviada! Pague o PIX abaixo para liberarmos os pagamentos.'); detalhe(id); }
+    else toast('Ordem enviada!');
   });};
 }
 function cliNova(){ return S.papel==='admin' ? ($('#nCli')?.value||'') : S.clienteId; }
@@ -1267,6 +1270,7 @@ async function vContratoAdmin(){
         <div class="f"><label>Cidade (vai no QR Code)</label><input id="cfCid" value="${esc(cfg.contratada_cidade||'Belo Horizonte')}"></div></div>
       <div class="f"><label>Texto dos pagamentos aos favorecidos <span class="muted small">({ORDEM}, {CLIENTE}, {CAMPANHA})</span></label><input id="cfTxt" maxlength="140" value="${esc(cfg.texto_repasse||TEXTO_REPASSE_PADRAO)}"></div>
       <div class="f"><label>Dados bancários (outros)</label><textarea id="cfBanco" placeholder="Banco: 000 - Nome\nAg.: 0000  C/C: 00000-0" style="min-height:60px">${esc(cfg.contratada_banco||'')}</textarea></div>
+      <div class="f"><label style="font-weight:500"><input type="checkbox" id="cfAuto" style="width:auto" ${cfg.cobranca_automatica!==false?'checked':''}> Cobrança automática: o cliente vê o PIX assim que envia a ordem <span class="muted small">(usa a taxa do cadastro do cliente; desligue se quiser revisar cada ordem antes de cobrar)</span></label></div>
       <div class="f"><label style="font-weight:500"><input type="checkbox" id="cfExig" style="width:auto" ${cfg.contrato_exigir?'checked':''}> Exigir assinatura do contrato para os clientes usarem o sistema</label></div>
       <button class="btn pri" id="cfSave">Salvar</button>
       <p class="small muted">Enquanto a exigência estiver desligada, os clientes usam o sistema normalmente. Ligue depois de preencher os dados acima.</p></div>
@@ -1279,6 +1283,7 @@ async function vContratoAdmin(){
     const row={contratada_razao:$('#cfRaz').value.trim()||null, contratada_cnpj:$('#cfCnpj').value.trim()||null, contratada_endereco:$('#cfEnd').value.trim()||null,
       contratada_rep:$('#cfRep').value.trim()||null, contratada_banco:$('#cfBanco').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked,
       contratada_pix:$('#cfPix').value.trim()||null};
+    if('cobranca_automatica' in cfg) row.cobranca_automatica=$('#cfAuto').checked;
     if('contratada_cidade' in cfg){ row.contratada_cidade=$('#cfCid').value.trim()||null; row.texto_repasse=$('#cfTxt').value.trim()||null; }
     if(row.contrato_exigir && (!row.contratada_razao||!row.contratada_cnpj||!row.contratada_endereco||!row.contratada_rep||!row.contrato_foro))
       throw new Error('Preencha todos os dados da empresa antes de exigir a assinatura.');
@@ -1300,7 +1305,7 @@ const MANUAL_CLIENTE = [
  ['Campanha personalizada', ['Toda premiação precisa estar ligada a uma campanha de incentivo aprovada.', 'Menu <b>Campanhas</b> → <b>+ Nova campanha</b> → <b>Campanha personalizada</b>.', 'Escolha a data de início: o fim pode ser de no máximo 3 meses depois.', 'Preencha participantes, objetivos, critérios de avaliação, critérios de premiação e formas de bonificação. Orçamento e logo são opcionais.', 'Aceite o regulamento e clique em <b>Enviar para análise</b>. Você é avisado quando for aprovada ou se precisar de ajustes.', 'Ordens são aceitas do início da campanha até 30 dias depois do fim.']],
  ['Repetir campanha', ['15 dias antes do fim, a tela inicial pergunta se você quer repetir a campanha por mais 3 meses.', 'Clique em <b>Sim, repetir campanha</b>: ela é criada com o mesmo briefing e já aprovada, começando no dia seguinte ao fim da atual.', 'Quer mudar metas ou critérios? Clique em <b>Não, cadastrar uma nova</b>.']],
  ['Favorecidos', ['Menu <b>Favorecidos</b> → <b>+ Novo favorecido</b>.', 'Informe nome completo e CPF (o sistema confere se o CPF é válido).', '<b>PIX</b> (recomendado, sem custo): escolha o tipo de chave e informe a chave.', '<b>TED</b>: informe banco, agência, conta e tipo de conta. Cada TED soma R$ 9,00 na nota.', 'Para tirar alguém da lista, clique em <b>Remover</b>. Ordens antigas não mudam.']],
- ['Nova ordem de pagamento', ['Menu <b>Nova ordem</b>.', 'Escolha a campanha (só aparecem campanhas aprovadas e no prazo).', 'Descreva a premiação e, se quiser, a data para pagamento.', 'Escolha os favorecidos e o valor de cada um. Dá para cadastrar um favorecido novo sem sair da tela.', 'Confira o quadro: total a pagar + taxa de serviço + custo de TED = valor da nota. Clique em <b>Enviar ordem</b>.']],
+ ['Nova ordem de pagamento', ['Menu <b>Nova ordem</b>.', 'Escolha a campanha (só aparecem campanhas aprovadas e no prazo).', 'Descreva a premiação e, se quiser, a data para pagamento.', 'Escolha os favorecidos e o valor de cada um. Dá para cadastrar um favorecido novo sem sair da tela.', 'Confira o quadro: total a pagar + taxa de serviço + custo de TED = valor da nota. Clique em <b>Enviar ordem</b>.', 'A tela de pagamento abre na hora, com o QR Code e o PIX copia e cola no valor exato. Pague e anexe o comprovante ali mesmo.']],
  ['Pagar a nota', ['Quando a nota fiscal estiver pronta, a ordem fica como <b>Pagar a nota</b> e aparece um aviso na tela inicial.', 'Abra a ordem, baixe a nota em <b>Arquivos</b> e faça o pagamento do valor da nota.', 'Anexe o comprovante e clique em <b>Enviar comprovante</b>.', 'Depois que o pagamento compensa, pagamos os favorecidos e a ordem fica <b>Concluída</b>, com os comprovantes em <b>Arquivos</b>.']],
 ];
 const MANUAL_ADMIN = [

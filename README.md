@@ -77,3 +77,6 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 - Dentro do sistema: botão **Senha** no topo (no celular, menu Mais) → Alterar minha senha (mínimo 8, com confirmação).
 - Admin: Clientes → cliente → **Definir nova senha**; Equipe → **Definir senha**. Edge function `prem-admin-senha` (verifica `prem_is_admin`, usa service role; cria o acesso se a pessoa ainda não fez o primeiro acesso). Função SQL auxiliar `prem_alvo_senha` (só service_role). Ninguém vê senhas: o Supabase guarda só o hash.
 - **Pendente:** e-mail de recuperação só chega para quem é da equipe do Supabase até configurar SMTP próprio (Authentication → Emails → SMTP), ex.: Resend ou Brevo com o domínio mayway.com.br.
+
+## Cobrança automática
+- `prem_config.cobranca_automatica` (padrão ligado; menu Contrato). Com a chave PIX cadastrada, `prem_criar_ordem` já cria a ordem em `nota_emitida` (cobrança enviada) com a taxa do cadastro do cliente; a tela do PIX abre na hora para o cliente. O admin recebe "Nova ordem… cobrança enviada automaticamente". Desligado, volta ao fluxo antigo (admin revisa a taxa e clica Enviar cobrança).
