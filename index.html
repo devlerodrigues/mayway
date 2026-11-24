@@ -48,6 +48,8 @@ main{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
 h1{font-size:27px;margin:0 0 16px;line-height:1.15}
 h2{font-size:15px;margin:0 0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.pw{position:relative}.pw input{padding-right:44px}.pw .olho{position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:0;padding:8px;cursor:pointer;color:#6B7475;line-height:0}.pw .olho:hover{color:var(--brand)}
+.lg-esq{display:block;text-align:right;margin:-6px 0 14px}
 .modelos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 .modelo{display:flex;flex-direction:column;gap:4px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;font:inherit;color:inherit}
 .modelo:hover,.modelo:focus-visible{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-2)}
@@ -225,12 +227,13 @@ header{padding-top:env(safe-area-inset-top)}
     <div id="lgMsg"></div>
     <form id="lgForm">
       <div class="f"><label>E-mail</label><input id="lgEmail" type="email" required autocomplete="email"></div>
-      <div class="f" id="lgPassBox"><label>Senha</label><input id="lgPass" type="password" minlength="6" autocomplete="current-password"></div>
+      <div class="f" id="lgPassBox"><label>Senha</label><div class="pw"><input id="lgPass" type="password" minlength="6" autocomplete="current-password"></div></div>
+      <button type="button" class="link small lg-esq" id="lgEsq" data-mode="reset">Esqueci minha senha</button>
       <button class="btn pri" style="width:100%;justify-content:center" id="lgBtn">Entrar</button>
     </form>
     <p class="small muted" style="margin:16px 0 0;display:flex;justify-content:space-between">
       <button class="link" data-mode="signup">Primeiro acesso</button>
-      <button class="link" data-mode="reset">Esqueci a senha</button>
+      <button class="link hidden" data-mode="reset" id="lgEsq2">Esqueci minha senha</button>
     </p>
     <p class="small" style="margin:12px 0 0;text-align:center"><button type="button" class="link" onclick="abrirVideo('videos/manual-cliente.mp4','Como usar o sistema')">▶ Vídeo: como usar o sistema</button></p>
   </div>
@@ -252,6 +255,7 @@ header{padding-top:env(safe-area-inset-top)}
     <nav id="nav"></nav>
     <div class="spacer"></div>
     <span class="who" id="who"></span>
+    <button class="btn sm btn-sair" onclick="alterarMinhaSenha()" title="Alterar minha senha">Senha</button>
     <button class="btn sm btn-sair" onclick="sair()">Sair</button>
   </div><div id="navMenu" class="nav-menu hidden" role="menu"></div></header>
   <main id="main"></main>
@@ -345,7 +349,38 @@ async function abrirArquivo(path){
 }
 
 // ================= AUTH =================
+// ---------- senha: olhinho, nova senha, alterar, admin define ----------
+const SVG_OLHO='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const SVG_OLHO_X='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-7 0-11-7-11-7a19 19 0 0 1 5.1-5.9M9.9 5.2A9.6 9.6 0 0 1 12 5c7 0 11 7 11 7a19 19 0 0 1-2.2 3.2M1 1l22 22"/><path d="M14.1 14.1a3 3 0 0 1-4.2-4.2"/></svg>';
+function ligarOlhos(root){ (root||document).querySelectorAll('.pw').forEach(w=>{ if(w.querySelector('.olho')) return; const i=w.querySelector('input');
+  const b=document.createElement('button'); b.type='button'; b.className='olho'; b.title='Mostrar senha'; b.setAttribute('aria-label','Mostrar senha'); b.innerHTML=SVG_OLHO;
+  b.onclick=()=>{ const ver=i.type==='password'; i.type=ver?'text':'password'; b.innerHTML=ver?SVG_OLHO_X:SVG_OLHO; b.title=b.ariaLabel=ver?'Esconder senha':'Mostrar senha'; i.focus(); }; w.appendChild(b); }); }
+const camposNovaSenha=()=>`<div class="f"><label>Nova senha (mínimo 8 caracteres)</label><div class="pw"><input id="np" type="password" minlength="8" autocomplete="new-password"></div></div>
+  <div class="f"><label>Repita a nova senha</label><div class="pw"><input id="np2" type="password" minlength="8" autocomplete="new-password"></div></div>`;
+function validarNovaSenha(){ const a=$('#np').value, b=$('#np2').value; if(a.length<8) throw new Error('A senha precisa ter pelo menos 8 caracteres.'); if(a!==b) throw new Error('As duas senhas não são iguais.'); return a; }
+function alterarMinhaSenha(){ fecharMenuNav&&fecharMenuNav();
+  abrirModal(`<h1>Alterar minha senha</h1><p class="muted" style="margin-top:0">${esc(S.user?.email||'')}</p>${camposNovaSenha()}<button class="btn pri" id="amOk">Salvar nova senha</button>`); ligarOlhos($('#modalBody'));
+  $('#amOk').onclick=()=>busy($('#amOk'),async()=>{ const pw=validarNovaSenha(); const {error}=await sb.auth.updateUser({password:pw}); if(error) throw new Error(/different from the old/i.test(error.message)?'A nova senha precisa ser diferente da atual.':error.message); fecharModal(); toast('Senha alterada.'); }); }
+function gerarSenha(){ const cs='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; const r=crypto.getRandomValues(new Uint32Array(10)); return [...r].map(x=>cs[x%cs.length]).join(''); }
+function definirSenhaAdmin(email, nome){
+  abrirModal(`<h1>Definir nova senha</h1><p class="muted" style="margin-top:0">${esc(nome||'')} · <b>${esc(email)}</b></p>
+    <p class="small">A senha atual deixa de funcionar na hora. Se a pessoa ainda não fez o primeiro acesso, o acesso já é criado com esta senha.</p>
+    <div class="f"><label>Nova senha (mínimo 8 caracteres)</label><div class="pw"><input id="dsPw" type="text" minlength="8" autocomplete="off" value="${gerarSenha()}"></div></div>
+    <p style="margin:-4px 0 14px"><button type="button" class="link small" id="dsGer">Gerar outra senha</button></p>
+    <button class="btn pri" id="dsOk">Salvar e copiar mensagem</button> <button class="btn" onclick="fecharModal()">Cancelar</button>`); ligarOlhos($('#modalBody'));
+  $('#dsGer').onclick=()=>{ $('#dsPw').value=gerarSenha(); };
+  $('#dsOk').onclick=()=>busy($('#dsOk'),async()=>{ const pw=$('#dsPw').value.trim(); if(pw.length<8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+    const {data,error}=await sb.functions.invoke('prem-admin-senha',{body:{email, senha:pw}});
+    if(error){ let m=error.message; try{ m=(await error.context.json()).error||m; }catch(_){} throw new Error(m); }
+    const txt=`Olá! Seu acesso ao sistema Mayway: ${location.origin}${location.pathname}\nE-mail: ${email}\nSenha: ${pw}\nDepois de entrar, troque a senha em "Senha" no topo da tela.`;
+    try{ await navigator.clipboard.writeText(txt); }catch(_){}
+    abrirModal(`<h1>Senha definida ✓</h1><p>${data?.criado?'O acesso foi criado.':'A senha foi trocada.'} Mande para a pessoa (a mensagem já foi copiada):</p>
+      <pre style="white-space:pre-wrap;background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit">${esc(txt)}</pre>
+      <p class="small muted">Por segurança, envie em uma conversa privada e peça para a pessoa trocar a senha depois de entrar.</p>
+      <button class="btn pri" onclick="fecharModal()">Fechar</button>`);
+  }); }
 let lgMode = 'login';
+ligarOlhos(document.getElementById('vLogin')||document);
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=e=>{ e.preventDefault(); setLgMode(lgMode===b.dataset.mode?'login':b.dataset.mode); });
 function setLgMode(m){
   lgMode=m; $('#lgMsg').innerHTML='';
@@ -354,21 +389,23 @@ function setLgMode(m){
     reset:['Recuperar senha','Enviaremos um link para você criar uma nova senha.','Enviar link'] }[m];
   $('#lgTitle').textContent=cfg[0]; $('#lgSub').textContent=cfg[1]; $('#lgBtn').textContent=cfg[2];
   $('#lgPassBox').classList.toggle('hidden', m==='reset');
-  document.querySelectorAll('[data-mode]').forEach(b=>b.textContent = (b.dataset.mode===m ? 'Voltar ao login' : (b.dataset.mode==='signup'?'Primeiro acesso':'Esqueci a senha')));
+  document.querySelectorAll('[data-mode]').forEach(b=>b.textContent = (b.dataset.mode===m ? 'Voltar ao login' : (b.dataset.mode==='signup'?'Primeiro acesso':'Esqueci minha senha')));
+  $('#lgEsq').classList.toggle('hidden', m!=='login'); $('#lgEsq2').classList.toggle('hidden', m==='login');
 }
 $('#lgForm').onsubmit = e => { e.preventDefault(); busy($('#lgBtn'), async ()=>{
   const email=$('#lgEmail').value.trim(), password=$('#lgPass').value;
   const msg=(t,ok)=>$('#lgMsg').innerHTML=`<div class="msg ${ok?'ok':'err'}">${esc(t)}</div>`;
   if(lgMode==='reset'){
     const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.href.split('#')[0]});
-    return error?msg(error.message):msg('Se o e-mail existir, você receberá o link em instantes.',true);
+    if(error) return msg(/not authorized|rate limit/i.test(error.message)?'Não conseguimos enviar o e-mail agora. Fale com a Mayway pelo WhatsApp (31) 7306-8089 que definimos uma nova senha para você.':error.message);
+    return msg('Pronto! Se este e-mail tiver acesso, o link para criar uma nova senha chega em instantes. Veja também o spam. Não chegou? Fale com a Mayway pelo WhatsApp (31) 7306-8089.',true);
   }
   if(!password || password.length<6) return msg('A senha precisa ter pelo menos 6 caracteres.');
   if(lgMode==='signup'){
     const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.href.split('#')[0]}});
-    if(error) return msg(error.message.includes('already')?'Este e-mail já tem acesso. Use "Entrar" com a sua senha ou "Esqueci a senha".':error.message);
+    if(error) return msg(error.message.includes('already')?'Este e-mail já tem acesso. Use "Entrar" com a sua senha ou "Esqueci minha senha".':error.message);
     if(data.user && Array.isArray(data.user.identities) && data.user.identities.length===0){
-      setLgMode('login'); return msg('Este e-mail já tem acesso. Entre com a sua senha ou clique em "Esqueci a senha" para criar uma nova.');
+      setLgMode('login'); return msg('Este e-mail já tem acesso. Entre com a sua senha ou clique em "Esqueci minha senha" para criar uma nova.');
     }
     if(!data.session) return msg('Conta criada! Confirme pelo link enviado ao seu e-mail (veja também o spam) e depois entre.',true);
     return iniciar();
@@ -381,10 +418,9 @@ async function sair(){ await sb.auth.signOut(); location.reload(); }
 
 sb.auth.onAuthStateChange(async (ev)=>{
   if(ev==='PASSWORD_RECOVERY'){
-    show('vApp'); $('#nav').innerHTML=''; $('#main').innerHTML=`<div class="card" style="max-width:420px"><h2>Nova senha</h2>
-      <div class="f"><label>Nova senha</label><input id="np" type="password" minlength="6"></div>
-      <button class="btn pri" id="npBtn">Salvar</button></div>`;
-    $('#npBtn').onclick=()=>busy($('#npBtn'),async()=>{ const {error}=await sb.auth.updateUser({password:$('#np').value}); if(error) throw error; toast('Senha alterada.'); iniciar(); });
+    show('vApp'); $('#nav').innerHTML=''; $('#main').innerHTML=`<div class="card" style="max-width:420px"><h2>Criar nova senha</h2>${camposNovaSenha()}
+      <button class="btn pri" id="npBtn">Salvar nova senha</button></div>`; ligarOlhos();
+    $('#npBtn').onclick=()=>busy($('#npBtn'),async()=>{ const pw=validarNovaSenha(); const {error}=await sb.auth.updateUser({password:pw}); if(error) throw error; toast('Senha alterada.'); iniciar(); });
   }
 });
 
@@ -445,7 +481,7 @@ function abrirMenuNav(){
   const menu=$('#navMenu'), itens=(S.navItems||[]).filter(([k])=>(S.navOcultos||[]).includes(k));
   menu.innerHTML = `<div class="nm-quem">${esc(S.user?.email||'')}${S.papel==='admin'?' · admin':''}</div>`
     + itens.map(([k,l])=>`<button data-tab="${k}" class="${k===S.tab?'on':''}">${l}</button>`).join('')
-    + `<button class="nm-sair" onclick="sair()">Sair</button>`;
+    + `<button onclick="alterarMinhaSenha()">Alterar minha senha</button><button class="nm-sair" onclick="sair()">Sair</button>`;
   menu.querySelectorAll('button[data-tab]').forEach(b=>b.onclick=()=>{ fecharMenuNav(); ir(b.dataset.tab); });
   const r=$('#navMais').getBoundingClientRect();
   if(!matchMedia('(max-width:700px)').matches){ menu.style.top=(r.bottom+6)+'px'; menu.style.left=Math.max(8,Math.min(r.left, innerWidth-menu.offsetWidth-8, innerWidth-248))+'px'; }
@@ -1127,7 +1163,7 @@ async function vEquipe(){
       ${(data||[]).map(u=>`<tr><td><b>${esc(u.nome||'—')}</b></td><td>${esc(u.email)}</td>
         <td>${u.tem_login?'<span class="pill st-concluida">Ativo</span>':'<span class="pill st-enviada">Aguardando primeiro acesso</span>'}</td>
         <td>${u.ultimo_acesso?dth(u.ultimo_acesso):'—'}</td>
-        <td class="num">${u.email.toLowerCase()===S.user.email.toLowerCase()?'<span class="muted small">você</span>':`<button class="btn sm danger" data-rm="${esc(u.email)}">Remover</button>`}</td></tr>`).join('')}
+        <td class="num">${u.email.toLowerCase()===S.user.email.toLowerCase()?'<span class="muted small">você</span>':`<button class="btn sm" data-sen="${esc(u.email)}" data-nome="${esc(u.nome||'')}">Definir senha</button> <button class="btn sm danger" data-rm="${esc(u.email)}">Remover</button>`}</td></tr>`).join('')}
     </tbody></table></div></div>`;
   $('#eqNovo').onclick=()=>{
     abrirModal(`<h1>Adicionar pessoa à equipe</h1>
@@ -1142,6 +1178,7 @@ async function vEquipe(){
       if(error) throw new Error(error.code==='23505'?'Este e-mail já está na equipe.':error.message);
       fecharModal(); toast('Pessoa adicionada à equipe.'); vEquipe(); });};
   };
+  document.querySelectorAll('[data-sen]').forEach(b=>b.onclick=()=>definirSenhaAdmin(b.dataset.sen, b.dataset.nome));
   document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
     abrirModal(`<h2>Remover ${esc(b.dataset.rm)} da equipe?</h2><p class="muted">A pessoa perde o acesso de administrador imediatamente.</p>
       <button class="btn danger" id="rmOk">Remover</button> <button class="btn" onclick="fecharModal()">Voltar</button>`);
@@ -1255,6 +1292,7 @@ async function vContratoAdmin(){
 
 // ================= AJUDA / MANUAL =================
 const MANUAL_CLIENTE = [
+ ['Senha', ['Esqueceu? Na tela de entrada clique em <b>Esqueci minha senha</b>, informe o e-mail e use o link que chega por e-mail (veja o spam).', 'Não chegou? Fale com a Mayway: a gente define uma senha nova para você.', 'Para trocar a senha estando dentro do sistema: botão <b>Senha</b> no topo (no celular, em <b>Mais</b>).', 'O ícone de olho ao lado do campo mostra o que você digitou.']],
  ['Primeiro acesso', ['Abra o link do sistema e clique em <b>Primeiro acesso</b>.', 'Use o e-mail que você informou para a nossa equipe e crie uma senha (mínimo 6 caracteres).', 'Se o e-mail de confirmação não chegar, olhe o spam ou fale com a gente.', 'Esqueceu a senha? Clique em <b>Esqueci a senha</b> na tela de entrada.']],
  ['Contrato', ['No primeiro acesso aparece o contrato de prestação de serviços.', 'Informe o endereço da empresa e o nome e CPF do representante legal e clique em <b>Gerar contrato com meus dados</b>.', 'Leia, marque que concorda e clique em <b>Assinar eletronicamente</b>. O sistema é liberado na hora.', 'O contrato assinado fica no menu <b>Contrato</b>.']],
  ['Campanhas prontas (modelos)', ['Menu <b>Campanhas</b> → <b>+ Nova campanha</b> e escolha um modelo: <b>Colaboradores</b> (metas de vendas ou desempenho), <b>Parceiros e revendas</b> ou <b>Clientes</b> (indicação).', 'Preencha só o básico: nome, período, quem participa, quantas pessoas, meta, prêmio e como será a apuração.', 'Abra <b>Ver como fica o briefing</b> para conferir o texto montado.', 'Aceite o regulamento e clique em <b>Criar campanha aprovada</b>: ela já sai aprovada e pode receber ordens na hora.', 'Quer mudar o texto do briefing? Use a <b>Campanha personalizada</b>, que passa por análise.']],
@@ -1269,6 +1307,7 @@ const MANUAL_ADMIN = [
  ['Painel', ['Mostra o faturamento do mês (suas taxas de ordens concluídas), o valor em andamento, o volume pago e quantas coisas dependem de você.', 'A <b>Fila de ação</b> lista ordens para emitir nota e para pagar.']],
  ['Clientes', ['Menu <b>Clientes</b> → <b>+ Novo cliente</b>: nome, CPF (pessoa física) ou CNPJ (empresa), e-mail de acesso e a taxa (%).', 'Avise o cliente: ele abre o link, clica em <b>Primeiro acesso</b> e cria a senha com esse e-mail.', 'A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época.']],
  ['Equipe', ['Menu <b>Equipe</b> → <b>+ Adicionar pessoa</b> para sócios e funcionários.', 'A pessoa entra pelo mesmo link com <b>Primeiro acesso</b> e tem acesso total de administrador.']],
+ ['Definir senha de cliente ou da equipe', ['Ninguém consegue ver a senha de outra pessoa: ela fica guardada embaralhada.', 'Para dar uma senha nova: <b>Clientes</b> → abra o cliente → <b>Definir nova senha</b> (ou <b>Equipe</b> → <b>Definir senha</b>).', 'O sistema sugere uma senha forte; clique em <b>Salvar e copiar mensagem</b> e mande para a pessoa em conversa privada.', 'Se o cliente ainda não fez o primeiro acesso, o acesso já é criado com essa senha.']],
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
  ['Pagar os favorecidos', ['Quando o cliente envia o comprovante, a ordem vira <b>Pagar favorecido</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido.', 'Faça os pagamentos, anexe o(s) comprovante(s) em um arquivo e clique em <b>Concluir ordem</b>. A taxa entra no faturamento.']],
@@ -1405,8 +1444,11 @@ function formCliente(id){
       <p class="muted small">A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época (você pode ajustar ao emitir a nota).</p>
       <button class="btn pri" id="cBtn">Salvar</button>
     </form>
-    ${!id?'':`<p class="small muted" style="margin-top:16px">Para o cliente entrar: ele acessa o sistema, clica em <b>Primeiro acesso</b> e cria a senha com o e-mail <b>${esc(c.email)}</b>.</p>`}`);
+    ${!id?'':`<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"><b>Acesso do cliente</b>
+      <p class="small muted" style="margin:6px 0 10px">O cliente entra com o e-mail <b>${esc(c.email)}</b>: pelo <b>Primeiro acesso</b> (ele cria a senha) ou com uma senha definida por vocês.</p>
+      <button type="button" class="btn sm" id="cSenha">Definir nova senha</button></div>`}`);
   const tipoDoc=()=>{ const d=soDig($('#cDoc').value); $('#cDocTipo').textContent = d.length===11?(cpfValido(d)?'Pessoa física (CPF)':'CPF inválido'):d.length===14?(cnpjValido(d)?'Empresa (CNPJ)':'CNPJ inválido'):''; };
+  $('#cSenha') && ($('#cSenha').onclick=()=>definirSenhaAdmin(c.email, c.nome));
   $('#cDoc').oninput=tipoDoc; $('#cDoc').onblur=()=>{ const d=soDig($('#cDoc').value); if(d.length===11||d.length===14) $('#cDoc').value=fmtDoc(d); }; tipoDoc();
   $('#cForm').onsubmit=e=>{e.preventDefault(); busy($('#cBtn'),async()=>{
     const doc=soDig($('#cDoc').value);

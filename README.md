@@ -71,3 +71,9 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 - Cliente (só as próprias) e admin, no detalhe da campanha.
 - **Cancelar** (`prem_cancelar_campanha`, motivo opcional): status `cancelada`, não aceita novas ordens, não repete nem edita; ordens em andamento seguem. Notifica a outra parte.
 - **Excluir** (`prem_excluir_campanha`): apaga de vez, só se não houver nenhuma ordem ligada (nem cancelada).
+
+## Senhas
+- Login: "Esqueci minha senha" logo abaixo do campo de senha; olho para mostrar/esconder a senha.
+- Dentro do sistema: botão **Senha** no topo (no celular, menu Mais) → Alterar minha senha (mínimo 8, com confirmação).
+- Admin: Clientes → cliente → **Definir nova senha**; Equipe → **Definir senha**. Edge function `prem-admin-senha` (verifica `prem_is_admin`, usa service role; cria o acesso se a pessoa ainda não fez o primeiro acesso). Função SQL auxiliar `prem_alvo_senha` (só service_role). Ninguém vê senhas: o Supabase guarda só o hash.
+- **Pendente:** e-mail de recuperação só chega para quem é da equipe do Supabase até configurar SMTP próprio (Authentication → Emails → SMTP), ex.: Resend ou Brevo com o domínio mayway.com.br.
