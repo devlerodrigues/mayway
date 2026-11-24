@@ -66,3 +66,8 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 - O cliente escolhe o modelo e preenche só o básico (nome, período, quem participa, quantidade, meta, prêmio, apuração); a RPC `prem_criar_campanha_modelo` monta o briefing no servidor e a campanha **já nasce aprovada** (admin e cliente são notificados).
 - Campanha personalizada continua indo para análise.
 - Regulamento: para colaboradores cita a CLT art. 457 §§2º/4º; para parceiros e clientes (não empregados) usa texto próprio, sem a CLT. Modelo de clientes é só por mérito (indicação convertida), sem sorteio/vale-brinde/concurso (Lei 5.768/71).
+
+## Cancelar e excluir campanha
+- Cliente (só as próprias) e admin, no detalhe da campanha.
+- **Cancelar** (`prem_cancelar_campanha`, motivo opcional): status `cancelada`, não aceita novas ordens, não repete nem edita; ordens em andamento seguem. Notifica a outra parte.
+- **Excluir** (`prem_excluir_campanha`): apaga de vez, só se não houver nenhuma ordem ligada (nem cancelada).

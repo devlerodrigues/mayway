@@ -863,7 +863,7 @@ function formFav(id, clienteId, onSaved){
 }
 
 // ================= CAMPANHAS =================
-const CST = { em_analise:['Em análise','st-enviada'], ajustes:['Ajustes solicitados','st-cancelada'], aprovada:['Aprovada','st-concluida'], reprovada:['Reprovada','st-cancelada'] };
+const CST = { em_analise:['Em análise','st-enviada'], ajustes:['Ajustes solicitados','st-cancelada'], aprovada:['Aprovada','st-concluida'], reprovada:['Reprovada','st-cancelada'], cancelada:['Cancelada','st-cancelada'] };
 const hoje = () => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),d.getDate()); };
 const dataDe = s => new Date(s+'T00:00:00');
 const diasAte = s => Math.round((dataDe(s)-hoje())/86400000);
@@ -941,7 +941,8 @@ function detalheCampanha(id){
     <div class="muted small">Campanha #${c.numero}${admin?' · '+esc(emp):''}</div>
     <h1 style="margin:4px 0 6px">${esc(c.nome)}</h1>
     <div>${campSituacao(c)}${c.modelo?' <span class="muted small">· criada por modelo pré-cadastrado</span>':''}</div>
-    ${c.parecer&&c.status!=='aprovada'?`<div class="msg err" style="margin-top:12px">${esc(c.parecer)}</div>`:''}
+    ${c.status==='cancelada'?`<div class="msg err" style="margin-top:12px">Cancelada em ${dth(c.cancelada_em)}.${c.motivo_cancelamento?' Motivo: '+esc(c.motivo_cancelamento)+'.':''} Não aceita novas ordens.</div>`:''}
+    ${c.parecer&&!['aprovada','cancelada'].includes(c.status)?`<div class="msg err" style="margin-top:12px">${esc(c.parecer)}</div>`:''}
     <dl class="dl" style="margin-top:16px">
       <dt>Período</dt><dd>${dIso(c.periodo_inicio)} a ${dIso(c.periodo_fim)}</dd>
       <dt>Orçamento previsto</dt><dd>${c.orcamento_previsto?brl(c.orcamento_previsto):'—'}</dd>
@@ -959,10 +960,16 @@ function detalheCampanha(id){
     ${admin && c.status==='aprovada' ? `<div style="margin-top:16px"><button class="btn sm" data-st="ajustes">Reabrir para ajustes</button></div>`:''}
     ${podeRenovar(c) ? `<div class="action" style="margin-top:16px"><b>Esta campanha termina em ${dIso(c.periodo_fim)}.</b> Quer repetir por mais ${S.durMax||3} meses (${dIso(periodoRenov(c)[0])} a ${dIso(periodoRenov(c)[1])})?<div style="margin-top:10px"><button class="btn pri" id="cpRen">Repetir campanha</button></div></div>`:''}
     ${!admin && ['em_analise','ajustes'].includes(c.status) ? `<div style="margin-top:16px"><button class="btn" id="cpEd">Editar briefing</button></div>`:''}
-    ${admin ? `<div style="margin-top:8px"><button class="btn sm" id="cpEd">Editar briefing</button></div>`:''}`);
+    ${admin && c.status!=='cancelada' ? `<div style="margin-top:8px"><button class="btn sm" id="cpEd">Editar briefing</button></div>`:''}
+    ${(()=>{ const todas=S.ordens.filter(o=>o.campanha_id===id).length; const podeCanc=!['cancelada','reprovada'].includes(c.status);
+      return (podeCanc||!todas) ? `<div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap">
+        ${podeCanc?`<button class="btn sm danger" id="cpCanc">Cancelar campanha</button>`:''}
+        ${!todas?`<button class="btn sm danger" id="cpExc">Excluir campanha</button>`:`<span class="muted small" style="align-self:center">Tem ${todas} ordem(ns) ligada(s): só pode ser cancelada, não excluída.</span>`}</div>`:''; })()}`);
   document.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
   $('#cpEd') && ($('#cpEd').onclick=()=>formCampanha(id));
   $('#cpRen') && ($('#cpRen').onclick=()=>renovarCampanha(id));
+  $('#cpCanc') && ($('#cpCanc').onclick=()=>cancelarCampanha(id));
+  $('#cpExc') && ($('#cpExc').onclick=()=>excluirCampanha(id));
   document.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>busy(b,async()=>{
     const st=b.dataset.st, par=($('#cpPar')?.value||'').trim();
     if(st!=='aprovada' && !par && $('#cpPar')) throw new Error('Escreva no parecer o que precisa ser ajustado.');
@@ -986,6 +993,26 @@ async function escolherModeloCampanha(){
     <div class="muted small" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Do seu jeito</div>
     <div class="modelos"><button type="button" class="modelo outro" data-m=""><b>Campanha personalizada</b><span>Você descreve participantes, objetivos e critérios. Vai para análise da Mayway antes de liberar as ordens.</span></button></div>`);
   document.querySelectorAll('#modalBody .modelo').forEach(b=>b.onclick=()=> b.dataset.m ? formCampanhaModelo(b.dataset.m) : formCampanha(null,true));
+}
+function cancelarCampanha(id){
+  const c=S.camps.find(x=>x.id===id); if(!c) return;
+  const abertas=S.ordens.filter(o=>o.campanha_id===id && !['concluida','cancelada'].includes(o.status)).length;
+  abrirModal(`<h1>Cancelar a campanha "${esc(c.nome)}"?</h1>
+    <p>Depois de cancelada, a campanha <b>não aceita novas ordens</b> e não pode ser repetida nem editada. Ela continua no histórico.</p>
+    ${abertas?`<div class="msg" style="background:#FBF5E6;border:1px solid #E6D3A3;color:#5E4715">Há ${abertas} ordem(ns) em andamento nesta campanha. Elas continuam normalmente até a conclusão.</div>`:''}
+    <div class="f"><label>Motivo (opcional)</label><textarea id="ccMot" maxlength="500" placeholder="Ex.: campanha substituída por outra"></textarea></div>
+    <button class="btn danger" id="ccOk">Sim, cancelar campanha</button> <button class="btn" onclick="detalheCampanha('${id}')">Voltar</button>`);
+  $('#ccOk').onclick=()=>busy($('#ccOk'),async()=>{ const {error}=await sb.rpc('prem_cancelar_campanha',{p_campanha:id, p_motivo:$('#ccMot').value.trim()||null}); if(error) throw error;
+    fecharModal(); toast('Campanha cancelada.'); await carregar(); ir(S.tab); });
+}
+function excluirCampanha(id){
+  const c=S.camps.find(x=>x.id===id); if(!c) return;
+  abrirModal(`<h1>Excluir a campanha "${esc(c.nome)}"?</h1>
+    <p>A campanha será <b>apagada de vez</b>, sem histórico. Isso não pode ser desfeito.</p>
+    <p class="muted small">Só é possível excluir campanhas sem nenhuma ordem ligada. Se preferir manter o registro, use Cancelar.</p>
+    <button class="btn danger" id="ceOk">Sim, excluir</button> <button class="btn" onclick="detalheCampanha('${id}')">Voltar</button>`);
+  $('#ceOk').onclick=()=>busy($('#ceOk'),async()=>{ const {error}=await sb.rpc('prem_excluir_campanha',{p_campanha:id}); if(error) throw error;
+    fecharModal(); toast('Campanha excluída.'); await carregar(); ir(S.tab); });
 }
 function formCampanhaModelo(chave){
   const m=(S.modelos||[]).find(x=>x.chave===chave); if(!m) return formCampanha(null,true);
@@ -1231,6 +1258,7 @@ const MANUAL_CLIENTE = [
  ['Primeiro acesso', ['Abra o link do sistema e clique em <b>Primeiro acesso</b>.', 'Use o e-mail que você informou para a nossa equipe e crie uma senha (mínimo 6 caracteres).', 'Se o e-mail de confirmação não chegar, olhe o spam ou fale com a gente.', 'Esqueceu a senha? Clique em <b>Esqueci a senha</b> na tela de entrada.']],
  ['Contrato', ['No primeiro acesso aparece o contrato de prestação de serviços.', 'Informe o endereço da empresa e o nome e CPF do representante legal e clique em <b>Gerar contrato com meus dados</b>.', 'Leia, marque que concorda e clique em <b>Assinar eletronicamente</b>. O sistema é liberado na hora.', 'O contrato assinado fica no menu <b>Contrato</b>.']],
  ['Campanhas prontas (modelos)', ['Menu <b>Campanhas</b> → <b>+ Nova campanha</b> e escolha um modelo: <b>Colaboradores</b> (metas de vendas ou desempenho), <b>Parceiros e revendas</b> ou <b>Clientes</b> (indicação).', 'Preencha só o básico: nome, período, quem participa, quantas pessoas, meta, prêmio e como será a apuração.', 'Abra <b>Ver como fica o briefing</b> para conferir o texto montado.', 'Aceite o regulamento e clique em <b>Criar campanha aprovada</b>: ela já sai aprovada e pode receber ordens na hora.', 'Quer mudar o texto do briefing? Use a <b>Campanha personalizada</b>, que passa por análise.']],
+ ['Cancelar ou excluir campanha', ['Abra a campanha em <b>Campanhas</b>.', '<b>Cancelar campanha</b>: ela deixa de aceitar novas ordens e fica no histórico. Ordens em andamento continuam até o fim. Dá para informar o motivo.', '<b>Excluir campanha</b>: apaga de vez. Só aparece se a campanha não tiver nenhuma ordem ligada.', 'A outra parte (cliente ou Mayway) recebe uma notificação.']],
  ['Campanha personalizada', ['Toda premiação precisa estar ligada a uma campanha de incentivo aprovada.', 'Menu <b>Campanhas</b> → <b>+ Nova campanha</b> → <b>Campanha personalizada</b>.', 'Escolha a data de início: o fim pode ser de no máximo 3 meses depois.', 'Preencha participantes, objetivos, critérios de avaliação, critérios de premiação e formas de bonificação. Orçamento e logo são opcionais.', 'Aceite o regulamento e clique em <b>Enviar para análise</b>. Você é avisado quando for aprovada ou se precisar de ajustes.', 'Ordens são aceitas do início da campanha até 30 dias depois do fim.']],
  ['Repetir campanha', ['15 dias antes do fim, a tela inicial pergunta se você quer repetir a campanha por mais 3 meses.', 'Clique em <b>Sim, repetir campanha</b>: ela é criada com o mesmo briefing e já aprovada, começando no dia seguinte ao fim da atual.', 'Quer mudar metas ou critérios? Clique em <b>Não, cadastrar uma nova</b>.']],
  ['Favorecidos', ['Menu <b>Favorecidos</b> → <b>+ Novo favorecido</b>.', 'Informe nome completo e CPF (o sistema confere se o CPF é válido).', '<b>PIX</b> (recomendado, sem custo): escolha o tipo de chave e informe a chave.', '<b>TED</b>: informe banco, agência, conta e tipo de conta. Cada TED soma R$ 9,00 na nota.', 'Para tirar alguém da lista, clique em <b>Remover</b>. Ordens antigas não mudam.']],
