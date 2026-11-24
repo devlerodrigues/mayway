@@ -85,3 +85,6 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 ## Excluir e arquivar ordens (admin)
 - **Excluir** (`prem_excluir_ordem`): só se não houve comprovante do cliente, pagamento a favorecido, comprovante de pagamento nem NFS-e (status enviada, nota_emitida ou cancelada). Apaga ordem, itens, histórico e notificações.
 - **Arquivar** (`prem_arquivar_ordem`, coluna `arquivada_em`): só concluídas ou canceladas. Some das listas (admin e cliente) e continua no faturamento; Ordens → Ver arquivadas → Desarquivar.
+
+## Comprovante por favorecido
+- `prem_ordem_itens.comprovante`: na etapa Pagar favorecidos, cada linha tem "📎 Anexar comprovante". `prem_registrar_pagamentos` exige comprovante de cada favorecido **ou** um PDF único (`prem_ordens.anexo_comprovante_pagamento`, agora opcional). No detalhe da ordem, cada favorecido pago mostra o botão do seu comprovante (cliente também vê).

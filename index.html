@@ -589,9 +589,9 @@ async function detalhe(id){
     sb.from('prem_ordem_itens').select('*').eq('ordem_id',id).order('created_at') ]);
   const temPg = (itens||[]).some(i=>i.pago_em);
   const tabItens = (itens&&itens.length) ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>CPF</th><th>Forma / dados</th><th class="num">Valor</th>${temPg?'<th>Pago em</th>':''}</tr></thead><tbody>
-    ${itens.map(i=>`<tr><td><b>${esc(i.nome)}</b></td><td>${esc(fmtDoc(i.cpf))}</td><td class="small">${esc(i.dados_pagamento)}${Number(i.custo_transferencia)?` <span class="muted">(+${brl(i.custo_transferencia)} TED)</span>`:''}</td><td class="num">${brl(i.valor)}</td>${temPg?`<td>${i.pago_em?dIso(i.pago_em):'—'}</td>`:''}</tr>`).join('')}
+    ${itens.map(i=>`<tr><td><b>${esc(i.nome)}</b></td><td>${esc(fmtDoc(i.cpf))}</td><td class="small">${esc(i.dados_pagamento)}${Number(i.custo_transferencia)?` <span class="muted">(+${brl(i.custo_transferencia)} TED)</span>`:''}</td><td class="num">${brl(i.valor)}</td>${temPg?`<td>${i.pago_em?dIso(i.pago_em):'—'}${i.comprovante?` <button class="btn sm" data-file="${esc(i.comprovante)}">📎 Comprovante</button>`:''}</td>`:''}</tr>`).join('')}
     </tbody></table></div>` : `<p>${esc(o.favorecido_nome||'—')} <span class="muted">${esc(o.dados_pagamento||'')}</span></p>`;
-  const arq = [['anexo_ordem','Ordem'],['anexo_comprovante_cliente','Comprovante do cliente'],['anexo_comprovante_pagamento','Comprovantes dos pagamentos'],['anexo_nota','NFS-e']]
+  const arq = [['anexo_ordem','Ordem'],['anexo_comprovante_cliente','Comprovante do cliente'],['anexo_comprovante_pagamento','PDF com todos os comprovantes'],['anexo_nota','NFS-e']]
     .filter(([k])=>o[k]).map(([k,l])=>`<button class="btn sm" data-file="${esc(o[k])}">📎 ${l}</button>`).join('') || '<span class="muted small">Nenhum anexo ainda.</span>';
   const step = ST[o.status].step;
   const precisaCfg = ['enviada','nota_emitida','pago_cliente','favorecidos_pagos'].includes(o.status);
@@ -624,13 +624,16 @@ async function detalhe(id){
       <p class="muted" style="margin-top:0">Use a descrição abaixo em cada PIX/TED. Ela deixa registrado que o pagamento é feito <b>por conta e ordem</b> do cliente.</p>
       <div class="f"><label>Descrição do pagamento</label><div style="display:flex;gap:8px"><input id="pDesc" value="${esc(descRep)}" readonly><button type="button" class="btn sm" id="pDescCp">Copiar</button></div></div>
       <div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>Dados</th><th class="num">Valor</th><th>Pago em</th><th>ID / E2E (opcional)</th></tr></thead><tbody>
-      ${its.map(i=>`<tr data-item="${i.id}"><td><b>${esc(i.nome)}</b><div class="small muted">CPF ${esc(fmtDoc(i.cpf))}</div></td>
+      ${its.map(i=>`<tr data-item="${i.id}"><td><b>${esc(i.nome)}</b><div class="small muted">CPF ${esc(fmtDoc(i.cpf))}</div>
+          <label class="btn sm pCompBtn" style="margin-top:6px;cursor:pointer">📎 Anexar comprovante<input class="pComp" type="file" accept=".pdf,image/*" hidden></label>
+          <div class="small pCompNome" style="margin-top:4px;color:var(--economia);word-break:break-all"></div></td>
         <td class="small">${esc(i.dados_pagamento)} <button type="button" class="btn sm" data-cp="${esc(i.dados_pagamento)}">Copiar</button></td>
         <td class="num">${brl(i.valor)} <button type="button" class="btn sm" data-cp="${Number(i.valor).toFixed(2).replace('.',',')}">Copiar</button></td>
         <td><input type="date" class="pData" value="${i.pago_em||hojeIso()}" style="min-width:140px"></td>
         <td><input class="pRef" value="${esc(i.pago_ref||'')}" placeholder="E2E…"></td></tr>`).join('')}
       </tbody></table></div>
-      <div class="f" style="margin-top:10px"><label>Comprovantes dos pagamentos (um PDF com todos)</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
+      <p class="small muted" style="margin:8px 0 0">Anexe o comprovante de cada favorecido na sua linha. Se preferir, anexe um único PDF com todos abaixo.</p>
+      <div class="f" style="margin-top:8px"><label>Ou um PDF com todos os comprovantes (opcional)</label><input id="aFile" type="file" accept=".pdf,image/*"></div>
       <button class="btn pri" id="aBtn">Registrar pagamentos</button></div>`;
   if(!admin && o.status==='pago_cliente') acao = `<div class="action"><p class="muted" style="margin:0">Pagamento recebido. Estamos pagando os favorecidos em seu nome; os comprovantes aparecem aqui assim que terminarmos.</p></div>`;
   // 4) admin emite a NFS-e com as deduções
@@ -703,11 +706,17 @@ async function detalhe(id){
   }
   if(admin && o.status==='pago_cliente'){
     $('#pDescCp').onclick=()=>copiar($('#pDesc').value,'Descrição copiada. Cole no campo "mensagem/descrição" do PIX.');
+    document.querySelectorAll('tr[data-item] .pComp').forEach(inp=>inp.onchange=()=>{ const tr=inp.closest('tr'), f=inp.files[0];
+      tr.querySelector('.pCompNome').textContent = f ? '✓ '+f.name : ''; tr.querySelector('.pCompBtn').firstChild.textContent = f ? '📎 Trocar comprovante' : '📎 Anexar comprovante'; });
     btn.onclick=()=>busy(btn,async()=>{
-      const linhas=[...document.querySelectorAll('tr[data-item]')].map(tr=>({id:tr.dataset.item, pago_em:tr.querySelector('.pData').value||null, pago_ref:tr.querySelector('.pRef').value}));
+      const trs=[...document.querySelectorAll('tr[data-item]')];
+      const linhas=trs.map(tr=>({id:tr.dataset.item, pago_em:tr.querySelector('.pData').value||null, pago_ref:tr.querySelector('.pRef').value, arq:tr.querySelector('.pComp').files[0]||null, nome:tr.querySelector('b').textContent}));
       if(linhas.some(l=>!l.pago_em)) throw new Error('Informe a data de pagamento de todos os favorecidos.');
-      const f=$('#aFile').files[0]; if(!f) throw new Error('Anexe os comprovantes dos pagamentos.');
-      const path=await upload(o.cliente_id,o.id,'pagamento',f);
+      const f=$('#aFile').files[0];
+      const falta=linhas.filter(l=>!l.arq && !its.find(i=>i.id===l.id)?.comprovante);
+      if(!f && falta.length) throw new Error(`Anexe o comprovante de ${falta.map(l=>l.nome).join(', ')} (ou um PDF com todos).`);
+      for(const [ix,l] of linhas.entries()){ if(l.arq){ btn.textContent=`Enviando comprovante de ${l.nome}…`; l.comprovante=await upload(o.cliente_id,o.id,'pagamento-'+(ix+1),l.arq); } delete l.arq; delete l.nome; }
+      const path=f?await upload(o.cliente_id,o.id,'pagamento',f):null;
       const {error}=await sb.rpc('prem_registrar_pagamentos',{p_ordem:o.id,p_anexo:path,p_itens:linhas});
       if(error) throw error; toast('Pagamentos registrados. Agora emita a NFS-e.'); fecharModal(); recarregar(); });
   }
@@ -1350,7 +1359,7 @@ const MANUAL_ADMIN = [
  ['Excluir ou arquivar ordens', ['Abra a ordem e role até o fim.', '<b>Excluir ordem</b>: só aparece se não houve pagamento do cliente, pagamento a favorecido nem nota fiscal. Apaga de vez.', '<b>Arquivar ordem</b>: para ordens concluídas ou canceladas. Some das listas (inclusive da tela do cliente), mas continua no faturamento.', 'Para ver ou desarquivar: <b>Ordens</b> → <b>Ver arquivadas</b>.']],
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
- ['Pagar os favorecidos', ['Quando o cliente envia o comprovante, a ordem vira <b>Pagar favorecido</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido.', 'Faça os pagamentos, anexe o(s) comprovante(s) em um arquivo e clique em <b>Concluir ordem</b>. A taxa entra no faturamento.']],
+ ['Pagar os favorecidos', ['Quando o cliente envia o comprovante do PIX, a ordem vira <b>Pagar favorecidos</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido, com botões de copiar. Use a <b>descrição do pagamento</b> pronta em cada PIX/TED.', 'Em cada favorecido, clique em <b>📎 Anexar comprovante</b> e escolha o comprovante dele. Confira a data de pagamento.', 'Se preferir, em vez de um por um, anexe um único PDF com todos os comprovantes.', 'Clique em <b>Registrar pagamentos</b>. O cliente vê o comprovante de cada favorecido na ordem.']],
  ['Faturamento', ['Menu <b>Faturamento</b>: receita por mês e por cliente, volume repassado e taxa média.', '<b>Baixar CSV do mês</b> gera a planilha para a contabilidade.']],
  ['Contrato', ['Menu <b>Contrato</b>: preencha os dados da sua empresa (razão social, CNPJ, endereço, representante, foro).', 'Ligue <b>Exigir assinatura</b>: a partir daí o cliente só usa o sistema depois de assinar.', 'A lista mostra quem já assinou; clique em <b>Ver</b> para o contrato assinado, com data, CPF e hash.']],
 ];
