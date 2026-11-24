@@ -48,6 +48,12 @@ main{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
 h1{font-size:27px;margin:0 0 16px;line-height:1.15}
 h2{font-size:15px;margin:0 0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.modelos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.modelo{display:flex;flex-direction:column;gap:4px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;font:inherit;color:inherit}
+.modelo:hover,.modelo:focus-visible{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-2)}
+.modelo b{font-family:var(--serif);font-size:1.08rem;color:var(--brand)}
+.modelo span{font-size:.86rem;color:#5b666b}
+.modelo.outro{background:#fafbfc}
 .grid{display:grid;gap:16px}
 .kpis{grid-template-columns:repeat(4,1fr);margin-bottom:20px}
 .kpi .l{color:var(--muted);font-size:12px;font-weight:500}
@@ -886,11 +892,14 @@ function campSituacao(c){
   if(diasAte(c.periodo_fim)>=-pz) return `<span class="pill st-pago_cliente">Encerrada · ordens até ${new Date(dataDe(c.periodo_fim).getTime()+pz*86400000).toLocaleDateString('pt-BR')}</span>`;
   return `<span class="pill st-cancelada">Encerrada</span>`;
 }
-function regulamento(emp){
+const ehTerceiros = modelo => !!modelo && !String(modelo).startsWith('colab_');
+function regulamento(emp, terceiros){
   emp = emp || 'A empresa';
-  return [`Ao participar, o colaborador declara conhecer e concordar com todas as regras desta campanha.`,
+  return [`Ao participar, o ${terceiros?'participante':'colaborador'} declara conhecer e concordar com todas as regras desta campanha.`,
     `${emp} poderá ajustar objetivos e critérios quando necessário, comunicando antes todos os participantes.`,
-    `Os prêmios têm natureza de incentivo e reconhecimento por desempenho superior ao ordinariamente esperado, não integram a remuneração e não se incorporam ao salário, nos termos do art. 457, §§ 2º e 4º, da CLT (redação da Lei nº 13.467/2017).`,
+    terceiros
+      ? `Os participantes não são empregados de ${emp}. Os prêmios têm natureza de incentivo por resultado, não criam vínculo de emprego, e a tributação aplicável a eles é de responsabilidade de ${emp}.`
+      : `Os prêmios têm natureza de incentivo e reconhecimento por desempenho superior ao ordinariamente esperado, não integram a remuneração e não se incorporam ao salário, nos termos do art. 457, §§ 2º e 4º, da CLT (redação da Lei nº 13.467/2017).`,
     `Situações não previstas neste briefing serão decididas pela diretoria de ${emp}.`];
 }
 function desenharCamp(){
@@ -931,7 +940,7 @@ function detalheCampanha(id){
   abrirModal(`
     <div class="muted small">Campanha #${c.numero}${admin?' · '+esc(emp):''}</div>
     <h1 style="margin:4px 0 6px">${esc(c.nome)}</h1>
-    <div>${campSituacao(c)}</div>
+    <div>${campSituacao(c)}${c.modelo?' <span class="muted small">· criada por modelo pré-cadastrado</span>':''}</div>
     ${c.parecer&&c.status!=='aprovada'?`<div class="msg err" style="margin-top:12px">${esc(c.parecer)}</div>`:''}
     <dl class="dl" style="margin-top:16px">
       <dt>Período</dt><dd>${dIso(c.periodo_inicio)} a ${dIso(c.periodo_fim)}</dd>
@@ -941,7 +950,7 @@ function detalheCampanha(id){
     </dl>
     ${bloco('1. Participantes',c.participantes)}${bloco('2. Objetivos',c.objetivos)}${bloco('3. Critérios de avaliação',c.criterios_avaliacao)}
     ${bloco('4. Critérios de premiação',c.criterios_premiacao)}${bloco('5. Formas de bonificação',c.formas_bonificacao)}${bloco('Considerações adicionais',c.consideracoes)}
-    <h2 style="margin:16px 0 6px">Regulamento</h2><ul class="small" style="margin:0;padding-left:18px">${regulamento(emp).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>
+    <h2 style="margin:16px 0 6px">Regulamento</h2><ul class="small" style="margin:0;padding-left:18px">${regulamento(emp, ehTerceiros(c.modelo)).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>
     <p class="small muted">Aceito em ${dth(c.aceite_em)}.</p>
     ${c.logo?`<button class="btn sm" data-file="${esc(c.logo)}">📎 Logo da empresa</button>`:''}
     ${admin && c.status!=='aprovada' ? `<div class="action" style="margin-top:16px"><h2>Análise</h2>
@@ -961,7 +970,76 @@ function detalheCampanha(id){
     if(error) throw error; toast(st==='aprovada'?'Campanha aprovada. O cliente já pode enviar ordens.':'Campanha atualizada.'); fecharModal(); await carregar(); ir(S.tab);
   }));
 }
-function formCampanha(id){
+// ---------- modelos de campanha pré-cadastrados ----------
+async function carregarModelos(){
+  if(S.modelos) return S.modelos;
+  const {data,error}=await sb.from('prem_campanha_modelos').select('*').eq('ativo',true).order('ordem'); if(error) throw error;
+  return (S.modelos=data||[]);
+}
+async function escolherModeloCampanha(){
+  let ms=[]; try{ ms=await carregarModelos(); }catch(e){ return formCampanha(null,true); }
+  const grupos=[...new Set(ms.map(m=>m.publico))];
+  abrirModal(`<h1>Nova campanha</h1>
+    <p class="muted" style="margin-top:0">Escolha um modelo pronto: você preenche só o básico e a campanha <b>já sai aprovada</b>. Se preferir descrever tudo do seu jeito, use a campanha personalizada (passa por análise).</p>
+    ${grupos.map(g=>`<div class="muted small" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">${esc(g)}</div>
+      <div class="modelos">${ms.filter(m=>m.publico===g).map(m=>`<button type="button" class="modelo" data-m="${esc(m.chave)}"><b>${esc(m.titulo)}</b><span>${esc(m.resumo)}</span></button>`).join('')}</div>`).join('')}
+    <div class="muted small" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Do seu jeito</div>
+    <div class="modelos"><button type="button" class="modelo outro" data-m=""><b>Campanha personalizada</b><span>Você descreve participantes, objetivos e critérios. Vai para análise da Mayway antes de liberar as ordens.</span></button></div>`);
+  document.querySelectorAll('#modalBody .modelo').forEach(b=>b.onclick=()=> b.dataset.m ? formCampanhaModelo(b.dataset.m) : formCampanha(null,true));
+}
+function formCampanhaModelo(chave){
+  const m=(S.modelos||[]).find(x=>x.chave===chave); if(!m) return formCampanha(null,true);
+  const admin=S.papel==='admin';
+  const emp=()=> admin ? S.clientes.find(x=>x.id===($('#cpCli')?.value||S.favCli))?.nome : S.cliente?.nome;
+  abrirModal(`<div class="muted small">${esc(m.publico)} · modelo pré-cadastrado</div>
+    <h1 style="margin:4px 0 6px">${esc(m.titulo)}</h1>
+    <p class="muted" style="margin-top:0">${esc(m.resumo)} Preencha o básico: o briefing completo é montado automaticamente e a campanha já sai aprovada.</p>
+    ${m.aviso?`<div class="msg" style="background:#FBF5E6;border:1px solid #E6D3A3;color:#5E4715;margin-bottom:12px">${esc(m.aviso)}</div>`:''}
+    <form id="cmForm">
+      ${admin?`<div class="f"><label>Cliente</label><select id="cpCli" required><option value="">Selecione…</option>${S.clientes.filter(x=>x.ativo).map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></div>`:''}
+      <div class="f"><label>Nome da campanha</label><input id="cm_nome" required maxlength="120" value="${esc(m.dica_nome||'')}"></div>
+      <div class="row"><div class="f"><label>Início</label><input id="cp_ini" type="date" required value="${isoD(new Date())}"></div>
+        <div class="f"><label>Fim <span class="muted" id="cpFimHint"></span></label><input id="cp_fim" type="date" required></div></div>
+      <div class="row"><div class="f" style="flex:2"><label>Quem participa</label><input id="cm_part" required maxlength="300" placeholder="${esc(m.dica_participantes||'')}"></div>
+        <div class="f"><label>Quantas pessoas (aprox.)</label><input id="cm_qtd" required type="number" min="1" max="100000" inputmode="numeric"></div></div>
+      <div class="f"><label>Meta / indicador</label><input id="cm_meta" required maxlength="300" placeholder="${esc(m.dica_meta||'')}"></div>
+      <div class="f"><label>Prêmio</label><input id="cm_premio" required maxlength="300" placeholder="${esc(m.dica_premio||'')}"></div>
+      <div class="row"><div class="f"><label>Apuração dos resultados</label><select id="cm_ap"><option value="mensal">Mensal</option><option value="semanal">Semanal</option><option value="final">Ao final da campanha</option></select></div>
+        <div class="f"><label>Orçamento previsto (R$) – opcional</label><input id="cm_orc" inputmode="decimal"></div></div>
+      <div class="f"><label>Logo da empresa (PNG) – opcional</label><input id="cm_logo" type="file" accept="image/png,image/*"></div>
+      <details class="card" style="background:#fafbfc;padding:12px 14px;margin-bottom:12px"><summary style="cursor:pointer"><b>Ver como fica o briefing</b></summary><div id="cmPrev" class="small" style="margin-top:8px"></div></details>
+      <div class="card" style="background:#fafbfc;padding:14px;margin-bottom:12px"><b>Regulamento</b>
+        <ul class="small" id="cpReg" style="margin:8px 0 0;padding-left:18px"></ul></div>
+      <div class="f"><label style="font-weight:500"><input type="checkbox" id="cp_ok" style="width:auto" required> Li e concordo com o regulamento acima<span id="cmEmp"></span>.</label></div>
+      <button class="btn pri" id="cmBtn">Criar campanha aprovada</button>
+      <button type="button" class="btn" onclick="escolherModeloCampanha()">Voltar aos modelos</button>
+    </form>`);
+  if(admin) $('#cpCli').value=S.favCli||'';
+  const regs=()=>{ const e=emp(); $('#cpReg').innerHTML=regulamento(e, ehTerceiros(m.chave)).map(x=>`<li>${esc(x)}</li>`).join(''); $('#cmEmp').textContent=e?' em nome de '+e:''; };
+  const apTxt={mensal:'mensal',semanal:'semanal',final:'ao final da campanha'};
+  const prev=()=>{ const v=k=>$('#cm_'+k).value.trim(), r=t=>t==null?'':t.replace(/\{\{PARTICIPANTES\}\}/g,v('part')||'…').replace(/\{\{QTD\}\}/g,v('qtd')||'…').replace(/\{\{META\}\}/g,v('meta')||'…').replace(/\{\{PREMIO\}\}/g,v('premio')||'…').replace(/\{\{APURACAO\}\}/g,apTxt[$('#cm_ap').value]);
+    $('#cmPrev').innerHTML=[['1. Participantes',m.t_participantes],['2. Objetivos',m.t_objetivos],['3. Critérios de avaliação',m.t_criterios_avaliacao],['4. Critérios de premiação',m.t_criterios_premiacao],['5. Formas de bonificação',m.t_formas_bonificacao],['Considerações',m.t_consideracoes]]
+      .filter(x=>x[1]).map(([t,x])=>`<p style="margin:0 0 8px"><b>${t}</b><br>${esc(r(x))}</p>`).join(''); };
+  const ajustaFim=()=>{ const ini=$('#cp_ini').value, f=$('#cp_fim'); if(!ini) return; const mx=fimMax(ini); f.min=ini; f.max=mx; if(!f.value||f.value>mx||f.value<ini) f.value=mx; $('#cpFimHint').textContent=`(até ${dIso(mx)})`; };
+  $('#cp_ini').addEventListener('change',ajustaFim); ajustaFim(); regs(); prev();
+  $('#cmForm').addEventListener('input',prev); $('#cm_ap').addEventListener('change',prev); if(admin) $('#cpCli').addEventListener('change',regs);
+  $('#cmForm').onsubmit=e=>{e.preventDefault(); busy($('#cmBtn'),async()=>{
+    const ini=$('#cp_ini').value, fim=$('#cp_fim').value;
+    if(fim<ini) throw new Error('A data de fim deve ser depois do início.');
+    if(fim>fimMax(ini)) throw new Error(`A campanha pode durar no máximo ${S.durMax||3} meses (até ${dIso(fimMax(ini))}).`);
+    const cli = admin ? $('#cpCli').value : S.clienteId; if(!cli) throw new Error('Selecione o cliente.');
+    const cid=crypto.randomUUID(); let logo=null;
+    const lf=$('#cm_logo').files[0]; if(lf) logo=await upload(cli,'campanhas/'+cid,'logo',lf);
+    const {error}=await sb.rpc('prem_criar_campanha_modelo',{ p_id:cid, p_cliente:cli, p_modelo:m.chave, p_nome:$('#cm_nome').value.trim(), p_inicio:ini, p_fim:fim,
+      p_dados:{participantes:$('#cm_part').value.trim(), qtd:Number($('#cm_qtd').value), meta:$('#cm_meta').value.trim(), premio:$('#cm_premio').value.trim(), apuracao:$('#cm_ap').value},
+      p_orcamento:parseValor($('#cm_orc').value)||null, p_logo:logo });
+    if(error) throw error;
+    fecharModal(); toast('Campanha criada e aprovada. Já pode enviar ordens.'); await carregar(); ir(S.tab==='nova'?'nova':'campanhas');
+  });};
+}
+
+function formCampanha(id, personalizada){
+  if(!id && !personalizada) return escolherModeloCampanha();
   const admin=S.papel==='admin';
   const c=S.camps.find(x=>x.id===id) || {};
   const t=(k,l,dica,req=true)=>`<div class="f"><label>${l}</label><textarea id="cp_${k}" ${req?'required':''} placeholder="${esc(dica)}">${esc(c[k]||'')}</textarea></div>`;
@@ -1152,7 +1230,8 @@ async function vContratoAdmin(){
 const MANUAL_CLIENTE = [
  ['Primeiro acesso', ['Abra o link do sistema e clique em <b>Primeiro acesso</b>.', 'Use o e-mail que você informou para a nossa equipe e crie uma senha (mínimo 6 caracteres).', 'Se o e-mail de confirmação não chegar, olhe o spam ou fale com a gente.', 'Esqueceu a senha? Clique em <b>Esqueci a senha</b> na tela de entrada.']],
  ['Contrato', ['No primeiro acesso aparece o contrato de prestação de serviços.', 'Informe o endereço da empresa e o nome e CPF do representante legal e clique em <b>Gerar contrato com meus dados</b>.', 'Leia, marque que concorda e clique em <b>Assinar eletronicamente</b>. O sistema é liberado na hora.', 'O contrato assinado fica no menu <b>Contrato</b>.']],
- ['Campanhas', ['Toda premiação precisa estar ligada a uma campanha de incentivo aprovada.', 'Menu <b>Campanhas</b> → <b>+ Nova campanha</b>.', 'Escolha a data de início: o fim pode ser de no máximo 3 meses depois.', 'Preencha participantes, objetivos, critérios de avaliação, critérios de premiação e formas de bonificação. Orçamento e logo são opcionais.', 'Aceite o regulamento e clique em <b>Enviar para análise</b>. Você é avisado quando for aprovada ou se precisar de ajustes.', 'Ordens são aceitas do início da campanha até 30 dias depois do fim.']],
+ ['Campanhas prontas (modelos)', ['Menu <b>Campanhas</b> → <b>+ Nova campanha</b> e escolha um modelo: <b>Colaboradores</b> (metas de vendas ou desempenho), <b>Parceiros e revendas</b> ou <b>Clientes</b> (indicação).', 'Preencha só o básico: nome, período, quem participa, quantas pessoas, meta, prêmio e como será a apuração.', 'Abra <b>Ver como fica o briefing</b> para conferir o texto montado.', 'Aceite o regulamento e clique em <b>Criar campanha aprovada</b>: ela já sai aprovada e pode receber ordens na hora.', 'Quer mudar o texto do briefing? Use a <b>Campanha personalizada</b>, que passa por análise.']],
+ ['Campanha personalizada', ['Toda premiação precisa estar ligada a uma campanha de incentivo aprovada.', 'Menu <b>Campanhas</b> → <b>+ Nova campanha</b> → <b>Campanha personalizada</b>.', 'Escolha a data de início: o fim pode ser de no máximo 3 meses depois.', 'Preencha participantes, objetivos, critérios de avaliação, critérios de premiação e formas de bonificação. Orçamento e logo são opcionais.', 'Aceite o regulamento e clique em <b>Enviar para análise</b>. Você é avisado quando for aprovada ou se precisar de ajustes.', 'Ordens são aceitas do início da campanha até 30 dias depois do fim.']],
  ['Repetir campanha', ['15 dias antes do fim, a tela inicial pergunta se você quer repetir a campanha por mais 3 meses.', 'Clique em <b>Sim, repetir campanha</b>: ela é criada com o mesmo briefing e já aprovada, começando no dia seguinte ao fim da atual.', 'Quer mudar metas ou critérios? Clique em <b>Não, cadastrar uma nova</b>.']],
  ['Favorecidos', ['Menu <b>Favorecidos</b> → <b>+ Novo favorecido</b>.', 'Informe nome completo e CPF (o sistema confere se o CPF é válido).', '<b>PIX</b> (recomendado, sem custo): escolha o tipo de chave e informe a chave.', '<b>TED</b>: informe banco, agência, conta e tipo de conta. Cada TED soma R$ 9,00 na nota.', 'Para tirar alguém da lista, clique em <b>Remover</b>. Ordens antigas não mudam.']],
  ['Nova ordem de pagamento', ['Menu <b>Nova ordem</b>.', 'Escolha a campanha (só aparecem campanhas aprovadas e no prazo).', 'Descreva a premiação e, se quiser, a data para pagamento.', 'Escolha os favorecidos e o valor de cada um. Dá para cadastrar um favorecido novo sem sair da tela.', 'Confira o quadro: total a pagar + taxa de serviço + custo de TED = valor da nota. Clique em <b>Enviar ordem</b>.']],

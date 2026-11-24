@@ -60,3 +60,9 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 ## Como liberar um cliente
 1. No sistema → **Clientes** → **Novo cliente** → informe o e-mail e a taxa.
 2. Avise o cliente: abrir o link → **Primeiro acesso** → criar a senha com esse e-mail.
+
+## Modelos de campanha (pré-cadastrados)
+- Tabela `prem_campanha_modelos` (4 modelos: Colaboradores – metas de vendas; Colaboradores – desempenho; Vendedores de parceiros; Indicação de clientes).
+- O cliente escolhe o modelo e preenche só o básico (nome, período, quem participa, quantidade, meta, prêmio, apuração); a RPC `prem_criar_campanha_modelo` monta o briefing no servidor e a campanha **já nasce aprovada** (admin e cliente são notificados).
+- Campanha personalizada continua indo para análise.
+- Regulamento: para colaboradores cita a CLT art. 457 §§2º/4º; para parceiros e clientes (não empregados) usa texto próprio, sem a CLT. Modelo de clientes é só por mérito (indicação convertida), sem sorteio/vale-brinde/concurso (Lei 5.768/71).
