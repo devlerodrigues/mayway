@@ -3,7 +3,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import forge from 'npm:node-forge@1.3.1';
 import { dpsAssinada, validar, lerNfse, type DadosDps, type Endereco } from './dps.ts';
-import { carregarTls, requisicaoMtls } from './tls.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -34,7 +33,7 @@ async function gunzipB64(b64: string): Promise<string> {
   return await new Response(ds).text();
 }
 
-type Cert = { keyPem: string; certPem: string; cadeiaPem: string[]; certB64: string; key: forge.pki.rsa.PrivateKey; titular: string; cnpj: string | null; validade: string; emissor: string };
+type Cert = { pfxB64: string; senha: string; keyPem: string; certPem: string; cadeiaPem: string[]; certB64: string; key: forge.pki.rsa.PrivateKey; titular: string; cnpj: string | null; validade: string; emissor: string };
 async function carregarCertificado(adm: ReturnType<typeof createClient>): Promise<Cert> {
   const { data: cfg, error: eCfg } = await adm.from('prem_config').select('nfse_cert_path').single();
   if (eCfg) throw new Error('Não consegui ler a configuração: ' + eCfg.message);
@@ -69,6 +68,7 @@ async function carregarCertificado(adm: ReturnType<typeof createClient>): Promis
   const cn = String(cert.subject.getField('CN')?.value || '');
   const keyPem = forge.pki.privateKeyInfoToPem(forge.pki.wrapRsaPrivateKey(forge.pki.privateKeyToAsn1(key)));
   return {
+    pfxB64: btoa(bin), senha: String(senha),
     key, keyPem, certPem: forge.pki.certificateToPem(cert), cadeiaPem: cadeia.map((c) => forge.pki.certificateToPem(c)),
     certB64: forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes()),
     titular: cn, cnpj: (cn.match(/:(\d{14})$/) || [])[1] || null,
@@ -76,15 +76,25 @@ async function carregarCertificado(adm: ReturnType<typeof createClient>): Promis
   };
 }
 
-// A Sefin pede o certificado por renegociação TLS (HTTP/1.1); o fetch do Deno não suporta. Ver tls.ts.
+// A Sefin pede o certificado por renegociação TLS 1.2, que o servidor de funções do Supabase não suporta.
+// O envio passa pela ponte própria (pasta ponte-nfse do repositório), que não guarda nada:
+// recebe o certificado a cada chamada, fala com a Receita e devolve a resposta.
 // deno-lint-ignore no-explicit-any
-async function chamar(adm: any, cert: Cert, url: string, init: { method: string; body?: string }) {
-  const tls = await carregarTls(adm);
-  const u = new URL(url);
-  const r = await requisicaoMtls(tls, u.hostname, init.method, u.pathname + u.search, init.body ?? null, cert.cadeiaPem, cert.keyPem, 90000);
+async function chamar(_adm: any, cert: Cert, url: string, init: { method: string; body?: string }) {
+  const ponte = (Deno.env.get('NFSE_PONTE_URL') || '').replace(/\/+$/, '');
+  const token = Deno.env.get('NFSE_PONTE_TOKEN') || '';
+  if (!ponte || !token) throw new Error('A ponte da NFS-e ainda não está configurada.');
+  const r = await fetch(`${ponte}/mtls`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-ponte-token': token },
+    body: JSON.stringify({ pfx: cert.pfxB64, senha: cert.senha, metodo: init.method, url, corpo: init.body ?? null }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const p = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Ponte: ' + (p.erro || `HTTP ${r.status}`));
   // deno-lint-ignore no-explicit-any
-  let corpo: any = null; try { corpo = JSON.parse(r.corpo); } catch (_) { corpo = { texto: r.corpo.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000) }; }
-  return { status: r.status, corpo };
+  let corpo: any = null; try { corpo = JSON.parse(p.corpo); } catch (_) { corpo = { texto: String(p.corpo || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000) }; }
+  return { status: Number(p.status), corpo };
 }
 
 function mensagensErro(corpo: any): string {
@@ -114,6 +124,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, ...info });
     }
     if (body.acao !== 'emitir' || !body.ordem_id) return json({ error: 'Ação inválida' }, 400);
+    if (!Deno.env.get('NFSE_PONTE_URL') || !Deno.env.get('NFSE_PONTE_TOKEN')) return json({ error: 'A ponte da NFS-e ainda não está configurada. Use a emissão manual pelo portal por enquanto.' }, 400);
 
     // ---------- dados ----------
     const { data: cfg, error: eCfg } = await adm.from('prem_config').select('*').single();
