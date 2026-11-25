@@ -10,7 +10,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
-const SEFIN = { 1: 'https://sefin.nfse.gov.br/SefinNacional', 2: 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional' } as const;
+const SEFIN = { 1: 'https://sefin.nfse.gov.br/SefinNacional', 2: 'https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional' } as const;
 
 const brl = (n: number) => 'R$ ' + Number(n).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const dig = (s: string) => String(s || '').replace(/\D/g, '');
