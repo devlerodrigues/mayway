@@ -14,6 +14,7 @@ export type DadosDps = {
   dCompet: string;        // AAAA-MM-DD
   codMun: string;         // IBGE do emissor e da prestação
   prestCnpj: string;
+  prestIm?: string | null; // inscrição municipal do prestador
   aliqSn: number;         // % aproximado de tributos (Simples)
   tomador: { doc: string; nome: string; email?: string | null; endereco?: Endereco | null };
   cTribNac: string; cTribMun?: string | null; nbs: string;
@@ -88,7 +89,7 @@ export function infDpsCanonico(d: DadosDps): string {
   return `<infDPS xmlns="${NS}" Id="${id}">` +
     el('tpAmb', d.ambiente) + el('dhEmi', d.dhEmi) + el('verAplic', 'Mayway1.0') +
     el('serie', dig(d.serie)) + el('nDPS', d.nDps) + el('dCompet', d.dCompet) + el('tpEmit', '1') + el('cLocEmi', d.codMun) +
-    '<prest>' + el('CNPJ', dig(d.prestCnpj)) +
+    '<prest>' + el('CNPJ', dig(d.prestCnpj)) + el('IM', d.prestIm ? dig(d.prestIm) : null) +
       '<regTrib>' + el('opSimpNac', '3') + el('regApTribSN', '1') + el('regEspTrib', '0') + '</regTrib>' +
     '</prest>' +
     toma +

@@ -189,7 +189,7 @@ Deno.serve(async (req) => {
     const nDps = Number((await adm.rpc('prem_nfse_reservar_dps', { p_ambiente: ambiente })).data);
     const dados: DadosDps = {
       ambiente, serie: cfg.nfse_serie || '1', nDps, dhEmi: agoraBrasilia(), dCompet, codMun: cfg.nfse_cod_mun || '3106200',
-      prestCnpj, aliqSn: Number(cfg.nfse_aliq_sn || 6),
+      prestCnpj, prestIm: cfg.nfse_im || null, aliqSn: Number(cfg.nfse_aliq_sn || 6),
       tomador: { doc: cli.documento, nome: cli.nome, email: cli.email, endereco: endCli },
       cTribNac: cfg.nfse_ctrib_nac || '170601', cTribMun: cfg.nfse_ctrib_mun || '001', nbs: cfg.nfse_nbs || '114061900',
       descricao, valorServico: total, ordemNumero: o.numero, favorecidos: favs, custoTed: ted,
