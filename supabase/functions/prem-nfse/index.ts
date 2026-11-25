@@ -45,7 +45,12 @@ async function carregarCertificado(adm: ReturnType<typeof createClient>): Promis
   let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   let p12;
   try { p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(bin), false, senha); }
-  catch (_) { throw new Error('Senha do certificado incorreta ou arquivo inválido.'); }
+  catch (e) {
+    const det = String((e as Error)?.message || e);
+    console.error('pkcs12', det, (e as Error)?.stack);
+    if (/MAC|password|Invalid/i.test(det)) throw new Error('Senha do certificado incorreta (a senha não abre este arquivo). Detalhe: ' + det);
+    throw new Error('Não consegui abrir o certificado. Detalhe: ' + det);
+  }
   const keyBag = (p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || [])[0]
     || (p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag] || [])[0];
   if (!keyBag?.key) throw new Error('Chave privada não encontrada no certificado.');
@@ -190,6 +195,7 @@ Deno.serve(async (req) => {
     await adm.from('prem_nfse').update({ status: r.status >= 500 ? 'erro' : 'rejeitada', mensagem: `HTTP ${r.status}: ${msg}`.slice(0, 2000), resposta: r.corpo }).eq('id', reg.id);
     return json({ error: `A Receita recusou a DPS: ${msg}`, http: r.status }, 422);
   } catch (e) {
+    console.error('prem-nfse', (e as Error)?.message, (e as Error)?.stack);
     return json({ error: (e as Error).message || 'Erro' }, 500);
   }
 });
