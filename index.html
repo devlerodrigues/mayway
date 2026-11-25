@@ -1604,7 +1604,7 @@ const MANUAL_ADMIN = [
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
  ['Pagar os favorecidos', ['Quando o cliente envia o comprovante do PIX, a ordem vira <b>Pagar favorecidos</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido, com botões de copiar. Use a <b>descrição do pagamento</b> pronta em cada PIX/TED.', 'Em cada favorecido, clique em <b>📎 Anexar comprovante</b> e escolha o comprovante dele. Confira a data de pagamento.', 'Se preferir, em vez de um por um, anexe um único PDF com todos os comprovantes.', 'Clique em <b>Registrar pagamentos</b>. O cliente vê o comprovante de cada favorecido na ordem.']],
- ['Indicadores e comissões', ['Menu <b>Indicadores</b> → <b>+ Novo indicador</b>: nome, CPF/CNPJ, chave PIX e a comissão padrão (% do total que o cliente paga).', 'Em <b>Clientes</b> → abra o cliente → escolha o <b>Indicador</b>. Se esse cliente tiver um % diferente, preencha <b>Comissão específica</b>.', 'A comissão nasce sozinha quando o cliente paga uma ordem: total pago (premiações + taxa + TED) × %.', 'Regra dos 3 meses: o indicador só recebe se tiver ativado um <b>cliente novo</b> (primeira ordem paga) nos 3 meses anteriores. Sem isso, a comissão fica como <b>Sem direito</b> e não é paga depois. Ao ativar um cliente novo, volta a receber de toda a carteira.', 'Fechamento: no início do mês, escolha o mês anterior em <b>Fechamento do mês</b>, pague o PIX de cada indicador e clique em <b>Registrar pagamento</b> (anexe o comprovante).', '<b>Baixar CSV</b> gera a planilha do mês para a contabilidade.']],
+ ['Indicadores e comissões', ['Menu <b>Indicadores</b> → <b>+ Novo indicador</b>: nome, CPF/CNPJ, chave PIX e a comissão padrão (% do total que o cliente paga).', 'Em <b>Clientes</b> → abra o cliente → escolha o <b>Indicador</b>. Se esse cliente tiver um % diferente, preencha <b>Comissão específica</b>.', 'A comissão nasce sozinha quando o cliente paga uma ordem: total pago (premiações + taxa + TED) × %.', 'Regra dos 3 meses: o indicador só recebe se tiver ativado um <b>cliente novo</b> (primeira ordem paga) nos 3 meses anteriores. Sem isso, a comissão fica como <b>Sem direito</b> e não é paga depois. Ao ativar um cliente novo, volta a receber de toda a carteira.', 'Fechamento: no início do mês, escolha o mês anterior em <b>Fechamento do mês</b>. Peça a cada indicador a <b>nota fiscal</b> no valor da comissão (o indicador é pessoa jurídica), pague o PIX e clique em <b>Registrar pagamento</b> com o número e o arquivo da NF (o comprovante do PIX é opcional).', '<b>Baixar CSV</b> gera a planilha do mês para a contabilidade.']],
  ['Faturamento', ['Menu <b>Faturamento</b>: receita por mês e por cliente, volume repassado e taxa média.', '<b>Baixar CSV do mês</b> gera a planilha para a contabilidade.']],
  ['Contrato', ['Menu <b>Contrato</b>: preencha os dados da sua empresa (razão social, CNPJ, endereço, representante, foro).', 'Ligue <b>Exigir assinatura</b>: a partir daí o cliente só usa o sistema depois de assinar.', 'A lista mostra quem já assinou; clique em <b>Ver</b> para o contrato assinado, com data, CPF e hash.']],
 ];
@@ -1815,7 +1815,7 @@ function vIndicadores(){
   $('#iCsv') && ($('#iCsv').onclick=()=>{
     const ord=id=>(S.ordens.find(o=>o.id===id)||{}).numero||'';
     const st={a_pagar:'A pagar',paga:'Paga',sem_direito:'Sem direito'};
-    const linhas=[['Indicador','Cliente','Ordem','Pago pelo cliente em','Total pago pelo cliente','%','Comissão','Situação','Motivo','Pago ao indicador em']].concat(doMes.map(c=>[nomeInd(c.indicador_id),nomeCli(c.cliente_id),ord(c.ordem_id),dt(c.pago_cliente_em),String(c.base).replace('.',','),String(c.percentual).replace('.',','),String(c.valor).replace('.',','),st[c.status],c.motivo||'',c.pago_em?dIso(c.pago_em):'']));
+    const linhas=[['Indicador','Cliente','Ordem','Pago pelo cliente em','Total pago pelo cliente','%','Comissão','Situação','Motivo','Pago ao indicador em','NF do indicador','CNPJ do indicador']].concat(doMes.map(c=>[nomeInd(c.indicador_id),nomeCli(c.cliente_id),ord(c.ordem_id),dt(c.pago_cliente_em),String(c.base).replace('.',','),String(c.percentual).replace('.',','),String(c.valor).replace('.',','),st[c.status],c.motivo||'',c.pago_em?dIso(c.pago_em):'',c.nf_numero||'',(inds.find(x=>x.id===c.indicador_id)||{}).documento||'']));
     const b=new Blob(['﻿'+linhas.map(l=>l.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n')],{type:'text/csv;charset=utf-8'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`comissoes-${sel}.csv`; a.click(); });
 }
@@ -1827,11 +1827,11 @@ function formIndicador(id){
   abrirModal(`<h1>${id?esc(i.nome):'Novo indicador'}</h1>
     ${s?`<p style="margin-top:0"><span class="pill ${s.cls}">${esc(s.txt)}</span></p>`:''}
     <form id="iForm">
-      <div class="row"><div class="f"><label>Nome</label><input id="iNome" required value="${esc(i.nome||'')}"></div>
-      <div class="f"><label>CPF ou CNPJ</label><input id="iDoc" inputmode="numeric" value="${esc(fmtDoc(i.documento||''))}"></div></div>
+      <div class="row"><div class="f"><label>Razão social</label><input id="iNome" required value="${esc(i.nome||'')}"></div>
+      <div class="f"><label>CNPJ</label><input id="iDoc" required inputmode="numeric" placeholder="00.000.000/0000-00" value="${esc(fmtDoc(i.documento||''))}"></div></div>
       <div class="row"><div class="f"><label>Telefone</label><input id="iTel" value="${esc(i.telefone||'')}"></div>
       <div class="f"><label>E-mail</label><input id="iEmail" type="email" value="${esc(i.email||'')}"></div></div>
-      <div class="row"><div class="f"><label>Tipo da chave PIX</label><select id="iPixT">${['','CPF','CNPJ','E-mail','Telefone','Aleatória'].map(t=>`<option ${t===(i.pix_tipo||'')?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="row"><div class="f"><label>Tipo da chave PIX</label><select id="iPixT">${['','CNPJ','E-mail','Telefone','Aleatória','CPF'].map(t=>`<option ${t===(i.pix_tipo||'')?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="f"><label>Chave PIX</label><input id="iPix" value="${esc(i.pix_chave||'')}"></div></div>
       <div class="row"><div class="f"><label>Comissão padrão (% do total que o cliente paga)</label><input id="iPct" required inputmode="decimal" value="${String(i.percentual_padrao).replace('.',',')}"></div>
       <div class="f"><label>&nbsp;</label><label><input type="checkbox" id="iAtivo" style="width:auto" ${i.ativo?'checked':''}> Indicador ativo</label></div></div>
@@ -1843,12 +1843,12 @@ function formIndicador(id){
       ${s.clis.length?`<table class="tbl" style="margin-top:6px"><thead><tr><th>Cliente</th><th class="num">Comissão</th><th>1ª ordem paga</th></tr></thead><tbody>${s.clis.map(c=>`<tr><td>${esc(c.nome)}</td><td class="num">${pct(c.comissao_percentual!=null?c.comissao_percentual:i.percentual_padrao)}${c.comissao_percentual!=null?' <span class="muted small">(específica)</span>':''}</td><td>${primeiroPagoCliente(c.id)?dt(primeiroPagoCliente(c.id)):'<span class="muted">ainda não pagou</span>'}</td></tr>`).join('')}</tbody></table>`:'<p class="small muted">Nenhum cliente ainda. Escolha este indicador no cadastro do cliente (Clientes → editar).</p>'}</div>
     <div style="margin-top:14px"><b>Comissões</b>${com.length?`<div class="tblwrap"><table class="tbl" style="margin-top:6px"><thead><tr><th>Pagamento do cliente</th><th>Cliente · ordem</th><th class="num">Base</th><th class="num">Comissão</th><th>Situação</th></tr></thead><tbody>
       ${com.map(c=>`<tr><td>${dt(c.pago_cliente_em)}</td><td>${esc(nomeCli(c.cliente_id))} · #${ord(c.ordem_id)}</td><td class="num">${brl(c.base)} × ${pct(c.percentual)}</td><td class="num"><b>${brl(c.valor)}</b></td>
-        <td><span class="pill ${st[c.status][1]}">${st[c.status][0]}</span>${c.status==='paga'?`<div class="small muted">em ${dIso(c.pago_em)}${c.comprovante?` · <a href="#" data-file="${esc(c.comprovante)}">comprovante</a>`:''}</div>`:c.motivo?`<div class="small muted">${esc(c.motivo)}</div>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<p class="small muted">Nenhuma comissão ainda.</p>'}</div>`:''}`);
+        <td><span class="pill ${st[c.status][1]}">${st[c.status][0]}</span>${c.status==='paga'?`<div class="small muted">em ${dIso(c.pago_em)}${c.nf_numero?' · NF '+esc(c.nf_numero):''}${c.nf_arquivo?` · <a href="#" data-file="${esc(c.nf_arquivo)}">nota</a>`:''}${c.comprovante?` · <a href="#" data-file="${esc(c.comprovante)}">comprovante</a>`:''}</div>`:c.motivo?`<div class="small muted">${esc(c.motivo)}</div>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<p class="small muted">Nenhuma comissão ainda.</p>'}</div>`:''}`);
   document.querySelectorAll('#modalBody [data-file]').forEach(a=>a.onclick=e=>{e.preventDefault(); abrirArquivo(a.dataset.file);});
   $('#iExc') && ($('#iExc').onclick=()=>busy($('#iExc'),async()=>{ if(!confirm('Excluir este indicador? Os clientes dele ficam sem indicador.')) return; const {error}=await sb.from('prem_indicadores').delete().eq('id',id); if(error) throw error; fecharModal(); toast('Indicador excluído.'); recarregar(); }));
   $('#iForm').onsubmit=e=>{e.preventDefault(); busy($('#iBtn'),async()=>{
     const doc=soDig($('#iDoc').value);
-    if(doc && !(doc.length===11?cpfValido(doc):doc.length===14?cnpjValido(doc):false)) throw new Error('CPF ou CNPJ inválido.');
+    if(!(doc.length===14 && cnpjValido(doc))) throw new Error('Informe um CNPJ válido: o indicador é pessoa jurídica e emite nota fiscal da comissão.');
     const p=parseValor($('#iPct').value); if(!(p>=0&&p<=100)) throw new Error('Comissão deve ficar entre 0 e 100%.');
     const row={nome:$('#iNome').value.trim(), documento:doc?fmtDoc(doc):null, telefone:$('#iTel').value.trim()||null, email:$('#iEmail').value.trim().toLowerCase()||null,
       pix_tipo:$('#iPixT').value||null, pix_chave:$('#iPix').value.trim()||null, percentual_padrao:p, ativo:$('#iAtivo').checked, observacao:$('#iObs').value.trim()||null};
@@ -1864,13 +1864,20 @@ function registrarPagtoComissao(indId, mes){
     <p style="margin-top:0"><b>${esc(i.nome||'')}</b> · ${nomeMesK(mes)} · ${lista.length} ordem(ns)</p>
     <div class="card" style="background:#fafbfc"><div class="muted small">Total a pagar</div><div style="font-size:26px;font-weight:600">${brl(total)}</div>
       <div class="small" style="margin-top:6px">${i.pix_chave?`PIX ${esc(i.pix_tipo||'')}: <b>${esc(i.pix_chave)}</b>`:'<span class="muted">Indicador sem chave PIX cadastrada</span>'}</div></div>
+    <p class="small" style="margin:12px 0 8px">O indicador emite a nota fiscal da comissão contra a Mayway (CNPJ 58.489.885/0001-14), no valor de <b>${brl(total)}</b>.</p>
+    <div class="row"><div class="f"><label>Número da NF do indicador</label><input id="pcNfN" required></div>
+    <div class="f"><label>Arquivo da NF (PDF ou XML)</label><input id="pcNf" type="file" accept="application/pdf,.xml,text/xml,image/*"></div></div>
     <div class="row"><div class="f"><label>Data do pagamento</label><input id="pcData" type="date" value="${new Date().toLocaleDateString('sv-SE')}"></div>
-    <div class="f"><label>Comprovante (opcional)</label><input id="pcArq" type="file" accept="image/*,application/pdf"></div></div>
+    <div class="f"><label>Comprovante do PIX (opcional)</label><input id="pcArq" type="file" accept="image/*,application/pdf"></div></div>
     <button class="btn pri" id="pcOk">Confirmar pagamento</button> <button class="btn" onclick="fecharModal()">Cancelar</button>`);
   $('#pcOk').onclick=()=>busy($('#pcOk'),async()=>{
     const data=$('#pcData').value; if(!data) throw new Error('Informe a data do pagamento.');
+    const nfN=$('#pcNfN').value.trim(), nfF=$('#pcNf').files[0];
+    if(!nfN) throw new Error('Informe o número da nota fiscal do indicador.');
+    if(!nfF) throw new Error('Anexe o arquivo da nota fiscal do indicador.');
+    const nfArq=await upload('indicadores', indId, 'nf-comissao-'+mes, nfF);
     const comp=await upload('indicadores', indId, 'comissao-'+mes, $('#pcArq').files[0]);
-    const {error}=await sb.from('prem_comissoes').update({status:'paga', pago_em:data, comprovante:comp}).in('id', lista.map(c=>c.id)).eq('status','a_pagar');
+    const {error}=await sb.from('prem_comissoes').update({status:'paga', pago_em:data, comprovante:comp, nf_numero:nfN, nf_arquivo:nfArq}).in('id', lista.map(c=>c.id)).eq('status','a_pagar');
     if(error) throw error; fecharModal(); toast('Pagamento registrado.'); recarregar();
   });
 }
