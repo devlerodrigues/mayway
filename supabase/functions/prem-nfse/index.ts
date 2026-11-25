@@ -3,6 +3,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import forge from 'npm:node-forge@1.3.1';
 import { dpsAssinada, validar, lerNfse, type DadosDps, type Endereco } from './dps.ts';
+import { carregarTls, requisicaoMtls } from './tls.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +34,7 @@ async function gunzipB64(b64: string): Promise<string> {
   return await new Response(ds).text();
 }
 
-type Cert = { keyPem: string; certPem: string; certB64: string; key: forge.pki.rsa.PrivateKey; titular: string; cnpj: string | null; validade: string; emissor: string };
+type Cert = { keyPem: string; certPem: string; cadeiaPem: string[]; certB64: string; key: forge.pki.rsa.PrivateKey; titular: string; cnpj: string | null; validade: string; emissor: string };
 async function carregarCertificado(adm: ReturnType<typeof createClient>): Promise<Cert> {
   const { data: cfg, error: eCfg } = await adm.from('prem_config').select('nfse_cert_path').single();
   if (eCfg) throw new Error('Não consegui ler a configuração: ' + eCfg.message);
@@ -59,27 +60,31 @@ async function carregarCertificado(adm: ReturnType<typeof createClient>): Promis
   const certs = (p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []).map((b) => b.cert!).filter(Boolean);
   const cert = certs.find((c) => (c.publicKey as forge.pki.rsa.PublicKey).n.equals(key.n)) || certs[0];
   if (!cert) throw new Error('Certificado não encontrado no arquivo.');
+  const cadeia = [cert]; let atual = cert;
+  for (let i = 0; i < 5; i++) {
+    const emissor = certs.find((c) => c !== atual && c.subject.hash === atual.issuer.hash);
+    if (!emissor || emissor.subject.hash === emissor.issuer.hash) break;
+    cadeia.push(emissor); atual = emissor;
+  }
   const cn = String(cert.subject.getField('CN')?.value || '');
   const keyPem = forge.pki.privateKeyInfoToPem(forge.pki.wrapRsaPrivateKey(forge.pki.privateKeyToAsn1(key)));
   return {
-    key, keyPem, certPem: forge.pki.certificateToPem(cert),
+    key, keyPem, certPem: forge.pki.certificateToPem(cert), cadeiaPem: cadeia.map((c) => forge.pki.certificateToPem(c)),
     certB64: forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes()),
     titular: cn, cnpj: (cn.match(/:(\d{14})$/) || [])[1] || null,
     validade: cert.validity.notAfter.toISOString(), emissor: String(cert.issuer.getField('CN')?.value || ''),
   };
 }
 
-async function chamar(cert: Cert, url: string, init: RequestInit) {
-  // a Sefin exige certificado do cliente (mTLS) e HTTP/1.1
+// A Sefin pede o certificado por renegociação TLS (HTTP/1.1); o fetch do Deno não suporta. Ver tls.ts.
+// deno-lint-ignore no-explicit-any
+async function chamar(adm: any, cert: Cert, url: string, init: { method: string; body?: string }) {
+  const tls = await carregarTls(adm);
+  const u = new URL(url);
+  const r = await requisicaoMtls(tls, u.hostname, init.method, u.pathname + u.search, init.body ?? null, cert.cadeiaPem, cert.keyPem, 90000);
   // deno-lint-ignore no-explicit-any
-  const client = (Deno as any).createHttpClient({ cert: cert.certPem, key: cert.keyPem, http2: false, http1: true });
-  try {
-    // deno-lint-ignore no-explicit-any
-    const r = await fetch(url, { ...init, client } as any);
-    const texto = await r.text();
-    let corpo: any = null; try { corpo = JSON.parse(texto); } catch (_) { corpo = { texto: texto.slice(0, 2000) }; }
-    return { status: r.status, corpo };
-  } finally { client.close?.(); }
+  let corpo: any = null; try { corpo = JSON.parse(r.corpo); } catch (_) { corpo = { texto: r.corpo.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000) }; }
+  return { status: r.status, corpo };
 }
 
 function mensagensErro(corpo: any): string {
@@ -157,10 +162,10 @@ Deno.serve(async (req) => {
 
     // ---------- recuperar envio anterior com resultado desconhecido ----------
     for (const n of (ja || []).filter((n: any) => n.status === 'erro' && !n.chave)) {
-      const r = await chamar(cert, `${SEFIN[ambiente]}/dps/${n.id_dps}`, { method: 'GET' }).catch(() => null);
+      const r = await chamar(adm, cert, `${SEFIN[ambiente]}/dps/${n.id_dps}`, { method: 'GET' }).catch(() => null);
       const chave = r && r.status === 200 ? (r.corpo?.chaveAcesso || r.corpo?.ChaveAcesso) : null;
       if (chave) {
-        const q = await chamar(cert, `${SEFIN[ambiente]}/nfse/${chave}`, { method: 'GET' });
+        const q = await chamar(adm, cert, `${SEFIN[ambiente]}/nfse/${chave}`, { method: 'GET' });
         if (q.status === 200 && q.corpo?.nfseXmlGZipB64) return await finalizar(adm, o, n.id, ambiente, chave, await gunzipB64(q.corpo.nfseXmlGZipB64), q.corpo);
       }
     }
@@ -185,7 +190,7 @@ Deno.serve(async (req) => {
 
     let r;
     try {
-      r = await chamar(cert, `${SEFIN[ambiente]}/nfse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dpsXmlGZipB64: await gzipB64(xml) }) });
+      r = await chamar(adm, cert, `${SEFIN[ambiente]}/nfse`, { method: 'POST', body: JSON.stringify({ dpsXmlGZipB64: await gzipB64(xml) }) });
     } catch (e) {
       await adm.from('prem_nfse').update({ status: 'erro', mensagem: 'Falha de comunicação: ' + String((e as Error).message || e).slice(0, 500) }).eq('id', reg.id);
       return json({ error: 'Falha de comunicação com a Receita. Tente de novo: o sistema confere antes se a nota chegou a ser gerada.' }, 502);
