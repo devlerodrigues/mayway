@@ -35,7 +35,8 @@ async function gunzipB64(b64: string): Promise<string> {
 
 type Cert = { keyPem: string; certPem: string; certB64: string; key: forge.pki.rsa.PrivateKey; titular: string; cnpj: string | null; validade: string; emissor: string };
 async function carregarCertificado(adm: ReturnType<typeof createClient>): Promise<Cert> {
-  const { data: cfg } = await adm.from('prem_config').select('nfse_cert_path').single();
+  const { data: cfg, error: eCfg } = await adm.from('prem_config').select('nfse_cert_path').single();
+  if (eCfg) throw new Error('Não consegui ler a configuração: ' + eCfg.message);
   if (!cfg?.nfse_cert_path) throw new Error('Certificado A1 não cadastrado. Envie o arquivo .pfx em Contrato → NFS-e automática.');
   const { data: arq, error } = await adm.storage.from('nfse-cert').download(cfg.nfse_cert_path);
   if (error || !arq) throw new Error('Não consegui ler o arquivo do certificado.');
@@ -92,12 +93,13 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
     const url = Deno.env.get('SUPABASE_URL')!;
-    const asUser = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
+    const asUser = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
     const { data: eu } = await asUser.auth.getUser();
     if (!eu?.user) return json({ error: 'Faça login novamente' }, 401);
     const { data: ehAdmin } = await asUser.rpc('prem_is_admin');
     if (ehAdmin !== true) return json({ error: 'Só administradores emitem NFS-e' }, 403);
-    const adm = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+    const sk = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const adm = createClient(url, sk, { auth: { persistSession: false, autoRefreshToken: false, storageKey: 'prem-nfse-adm' }, global: { headers: { apikey: sk, Authorization: 'Bearer ' + sk } } });
     const body = await req.json().catch(() => ({}));
 
     if (body.acao === 'info') {
@@ -109,7 +111,8 @@ Deno.serve(async (req) => {
     if (body.acao !== 'emitir' || !body.ordem_id) return json({ error: 'Ação inválida' }, 400);
 
     // ---------- dados ----------
-    const { data: cfg } = await adm.from('prem_config').select('*').single();
+    const { data: cfg, error: eCfg } = await adm.from('prem_config').select('*').single();
+    if (!cfg) throw new Error('Não consegui ler a configuração: ' + (eCfg?.message || 'vazia'));
     const ambiente = (Number(body.ambiente) || cfg.nfse_ambiente || 2) as 1 | 2;
     const { data: o } = await adm.from('prem_ordens').select('*, prem_clientes(*), prem_campanhas(nome)').eq('id', body.ordem_id).single();
     if (!o) return json({ error: 'Ordem não encontrada' }, 404);
