@@ -186,7 +186,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    const nDps = Number((await adm.rpc('prem_nfse_reservar_dps', { p_ambiente: ambiente })).data);
+    const { data: nRes, error: eRes } = await adm.rpc('prem_nfse_reservar_dps', { p_ambiente: ambiente });
+    const nDps = Number(nRes);
+    if (eRes || !(nDps >= 1)) throw new Error('Não consegui reservar o número da DPS: ' + (eRes?.message || 'número inválido'));
     const dados: DadosDps = {
       ambiente, serie: cfg.nfse_serie || '1', nDps, dhEmi: agoraBrasilia(), dCompet, codMun: cfg.nfse_cod_mun || '3106200',
       prestCnpj, prestIm: cfg.nfse_im || null, aliqSn: Number(cfg.nfse_aliq_sn || 6),
