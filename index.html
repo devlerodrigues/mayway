@@ -605,7 +605,7 @@ async function iniciar(){
   show('vApp');
   $('#who').textContent = S.user.email + (S.papel==='admin'?' · admin':'');
   if(S.papel==='admin'){
-    montarNav([['painel','Painel'],['ordens','Ordens'],['campanhas','Campanhas'],['clientes','Clientes'],['faturamento','Faturamento'],['favorecidos','Favorecidos'],['nova','Nova ordem'],['contrato','Contrato'],['equipe','Equipe'],['ajuda','Ajuda']]);
+    montarNav([['painel','Painel'],['ordens','Ordens'],['campanhas','Campanhas'],['clientes','Clientes'],['faturamento','Faturamento'],['indicadores','Indicadores'],['favorecidos','Favorecidos'],['nova','Nova ordem'],['contrato','Contrato'],['equipe','Equipe'],['ajuda','Ajuda']]);
     await carregar(); ir(S.tab||'painel'); iniciarNotificacoes(); abrirPeloHash();
   } else {
     const { data:c } = await sb.from('prem_clientes').select('*').eq('id',S.clienteId).single();
@@ -618,7 +618,7 @@ async function iniciar(){
 }
 function montarNav(items){
   S.navItems = items;
-  const curto={'Minhas ordens':'Ordens','Nova ordem':'+ Nova','Favorecidos':'Favorec.','Faturamento':'Faturam.'};
+  const curto={'Minhas ordens':'Ordens','Nova ordem':'+ Nova','Favorecidos':'Favorec.','Faturamento':'Faturam.','Indicadores':'Indicad.'};
   $('#nav').innerHTML = items.map(([k,l])=>`<button data-tab="${k}" title="${l}"><span class="lg">${l}</span><span class="sh">${curto[l]||l}</span></button>`).join('')
     + `<button class="nav-mais" id="navMais" aria-haspopup="true">Mais <span class="car">▾</span></button>`;
   $('#nav').querySelectorAll('button[data-tab]').forEach(b=>b.onclick=()=>{ fecharMenuNav(); ir(b.dataset.tab); });
@@ -668,7 +668,7 @@ else addEventListener('resize',()=>{ clearTimeout(_tNav); _tNav=setTimeout(ajust
 if(document.fonts) document.fonts.ready.then(()=>ajustarNav());
 function ir(tab){
   S.tab=tab; marcarNav();
-  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, ajuda:vAjuda, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); marcarNav(); verContratoAssinado(S.clienteId); } }}[tab])();
+  ({painel:vPainel, ordens:vOrdens, clientes:vClientes, faturamento:vFaturamento, indicadores:vIndicadores, minhas:vMinhas, nova:vNova, favorecidos:vFavorecidos, campanhas:vCampanhas, equipe:vEquipe, ajuda:vAjuda, contrato:()=>{ if(S.papel==='admin') vContratoAdmin(); else { S.tab='minhas'; vMinhas(); marcarNav(); verContratoAssinado(S.clienteId); } }}[tab])();
 }
 
 // ================= DADOS =================
@@ -677,6 +677,7 @@ async function carregar(){
   const [o, c, f, cfg, cp] = await Promise.all([ q, S.papel==='admin' ? sb.from('prem_clientes').select('*').order('nome') : Promise.resolve({data:[]}),
     sb.from('prem_favorecidos').select('*').eq('ativo',true).order('nome'), sb.from('prem_config').select('*').single(), sb.from('prem_campanhas').select('*, prem_clientes(nome)').order('periodo_inicio',{ascending:false}) ]);
   if(o.error) toast(o.error.message,true);
+  if(S.papel==='admin'){ const [ri, rc] = await Promise.all([ sb.from('prem_indicadores').select('*').order('nome'), sb.from('prem_comissoes').select('*').order('pago_cliente_em',{ascending:false}).limit(5000) ]); S.inds = ri.data||[]; S.comis = rc.data||[]; }
   S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data){ S.custoTed = Number(cfg.data.custo_ted); S.prazoPos = cfg.data.prazo_pos_campanha_dias; S.durMax = cfg.data.duracao_max_meses; S.avisoRen = cfg.data.aviso_renovacao_dias; } S.camps = cp.data||[];
 }
 async function recarregar(){ await carregar(); ir(S.tab); }
@@ -1603,6 +1604,7 @@ const MANUAL_ADMIN = [
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
  ['Pagar os favorecidos', ['Quando o cliente envia o comprovante do PIX, a ordem vira <b>Pagar favorecidos</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido, com botões de copiar. Use a <b>descrição do pagamento</b> pronta em cada PIX/TED.', 'Em cada favorecido, clique em <b>📎 Anexar comprovante</b> e escolha o comprovante dele. Confira a data de pagamento.', 'Se preferir, em vez de um por um, anexe um único PDF com todos os comprovantes.', 'Clique em <b>Registrar pagamentos</b>. O cliente vê o comprovante de cada favorecido na ordem.']],
+ ['Indicadores e comissões', ['Menu <b>Indicadores</b> → <b>+ Novo indicador</b>: nome, CPF/CNPJ, chave PIX e a comissão padrão (% do total que o cliente paga).', 'Em <b>Clientes</b> → abra o cliente → escolha o <b>Indicador</b>. Se esse cliente tiver um % diferente, preencha <b>Comissão específica</b>.', 'A comissão nasce sozinha quando o cliente paga uma ordem: total pago (premiações + taxa + TED) × %.', 'Regra dos 3 meses: o indicador só recebe se tiver ativado um <b>cliente novo</b> (primeira ordem paga) nos 3 meses anteriores. Sem isso, a comissão fica como <b>Sem direito</b> e não é paga depois. Ao ativar um cliente novo, volta a receber de toda a carteira.', 'Fechamento: no início do mês, escolha o mês anterior em <b>Fechamento do mês</b>, pague o PIX de cada indicador e clique em <b>Registrar pagamento</b> (anexe o comprovante).', '<b>Baixar CSV</b> gera a planilha do mês para a contabilidade.']],
  ['Faturamento', ['Menu <b>Faturamento</b>: receita por mês e por cliente, volume repassado e taxa média.', '<b>Baixar CSV do mês</b> gera a planilha para a contabilidade.']],
  ['Contrato', ['Menu <b>Contrato</b>: preencha os dados da sua empresa (razão social, CNPJ, endereço, representante, foro).', 'Ligue <b>Exigir assinatura</b>: a partir daí o cliente só usa o sistema depois de assinar.', 'A lista mostra quem já assinou; clique em <b>Ver</b> para o contrato assinado, com data, CPF e hash.']],
 ];
@@ -1732,6 +1734,8 @@ function formCliente(id){
       <div class="f"><label>Telefone</label><input id="cTel" value="${esc(c.telefone||'')}"></div></div>
       <div class="row"><div class="f"><label>E-mail de acesso</label><input id="cEmail" type="email" required value="${esc(c.email||'')}"></div>
       <div class="f"><label>Sua taxa sobre cada pagamento (%)</label><input id="cTaxa" required inputmode="decimal" value="${String(c.taxa_percentual).replace('.',',')}"></div></div>
+      <div class="row"><div class="f"><label>Indicador (quem trouxe o cliente)</label><select id="cInd"><option value="">— Sem indicador —</option>${(S.inds||[]).filter(i=>i.ativo||i.id===c.indicador_id).map(i=>`<option value="${i.id}" ${i.id===c.indicador_id?'selected':''}>${esc(i.nome)} (${pct(i.percentual_padrao)})</option>`).join('')}</select></div>
+      <div class="f"><label>Comissão específica deste cliente (%)</label><input id="cComis" inputmode="decimal" placeholder="Vazio = padrão do indicador" value="${c.comissao_percentual!=null?String(c.comissao_percentual).replace('.',','):''}"></div></div>
       ${blocoEndereco('ce', c, 'Endereço da empresa', '(vai na nota fiscal e é usado para os favorecidos sem endereço)')}
       <div class="f"><label><input type="checkbox" id="cAtivo" style="width:auto" ${c.ativo?'checked':''}> Cliente ativo</label></div>
       <p class="muted small">A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época (você pode ajustar ao emitir a nota).</p>
@@ -1748,13 +1752,127 @@ function formCliente(id){
     const doc=soDig($('#cDoc').value);
     if(doc && !(doc.length===11?cpfValido(doc):doc.length===14?cnpjValido(doc):false)) throw new Error('CPF ou CNPJ inválido. Confira os números.');
     const row={nome:$('#cNome').value.trim(),documento:doc?fmtDoc(doc):null,telefone:$('#cTel').value.trim()||null,
-      email:$('#cEmail').value.trim().toLowerCase(),taxa_percentual:parseValor($('#cTaxa').value),ativo:$('#cAtivo').checked, ...lerEndereco('ce', false)};
+      email:$('#cEmail').value.trim().toLowerCase(),taxa_percentual:parseValor($('#cTaxa').value),ativo:$('#cAtivo').checked, ...lerEndereco('ce', false),
+      indicador_id:$('#cInd').value||null, comissao_percentual:$('#cComis').value.trim()===''?null:parseValor($('#cComis').value)};
+    if(row.comissao_percentual!=null && (row.comissao_percentual<0||row.comissao_percentual>100)) throw new Error('Comissão específica deve ficar entre 0 e 100%.');
     if(row.cep && !c.endereco) row.endereco=`${row.logradouro}, ${row.numero}${row.complemento?' '+row.complemento:''} – ${row.bairro} – ${row.cidade}/${row.uf} – CEP ${fmtCep(row.cep)}`;
     const {error}= id ? await sb.from('prem_clientes').update(row).eq('id',id) : await sb.from('prem_clientes').insert(row);
     if(error) throw new Error(error.code==='23505'?'Já existe um cliente com esse e-mail.':error.message);
     toast('Cliente salvo.'); fecharModal(); recarregar();
     if(!id) toast('Avise o cliente: acessar o sistema → "Primeiro acesso" com '+row.email);
   });};
+}
+
+
+// ================= ADMIN: INDICADORES =================
+const mesKey = d => { const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0'); };
+const nomeMesK = k => { if(!k) return ''; const [y,m]=k.split('-'); return new Date(y,m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); };
+function primeiroPagoCliente(cid){ let min=null; S.ordens.forEach(o=>{ if(o.cliente_id===cid && o.pago_cliente_em && (!min || o.pago_cliente_em<min)) min=o.pago_cliente_em; }); return min; }
+function situacaoIndicador(ind){
+  const clis=S.clientes.filter(c=>c.indicador_id===ind.id);
+  const ativ=clis.map(c=>primeiroPagoCliente(c.id)).filter(Boolean).sort();
+  const ult=ativ[ativ.length-1]||null;
+  if(!ind.ativo) return {cls:'st-cancelada', txt:'Desativado', ult, clis};
+  if(!ult) return {cls:'st-enviada', txt:'Aguardando o 1º cliente pagar', ult, clis};
+  const ate=new Date(ult); ate.setMonth(ate.getMonth()+3);
+  return new Date()<=ate ? {cls:'st-concluida', txt:'Recebendo até '+dt(ate), ult, ate, clis} : {cls:'st-cancelada', txt:'Sem comissão desde '+dt(ate)+' · precisa ativar cliente novo', ult, ate, clis};
+}
+function vIndicadores(){
+  const inds=S.inds||[], com=S.comis||[];
+  const meses=[...new Set(com.map(c=>c.competencia.slice(0,7)))].sort().reverse();
+  const atual=mesKey(new Date()), ant=(()=>{const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return mesKey(d);})();
+  const sel=S.indMes || (meses.includes(ant)?ant:meses[0]) || ant;
+  const soma=a=>a.reduce((t,c)=>t+Number(c.valor),0);
+  const aPagar=com.filter(c=>c.status==='a_pagar'), doMes=com.filter(c=>c.competencia.slice(0,7)===sel);
+  const nomeInd=id=>(inds.find(i=>i.id===id)||{}).nome||'—', nomeCli=id=>(S.clientes.find(c=>c.id===id)||{}).nome||'—';
+  const porInd={}; doMes.forEach(c=>{ const p=porInd[c.indicador_id]=porInd[c.indicador_id]||{aPagar:0,pago:0,perdido:0,n:0}; p.n++; p[c.status==='a_pagar'?'aPagar':c.status==='paga'?'pago':'perdido']+=Number(c.valor); });
+  const ano=new Date().getFullYear()+'';
+  $('#main').innerHTML=`
+    <div class="toolbar"><h1 style="margin:0">Indicadores</h1><div class="spacer"></div><button class="btn pri" onclick="formIndicador()">+ Novo indicador</button></div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="l">Comissões a pagar (total)</div><div class="v">${brl(soma(aPagar))}</div><div class="s">${aPagar.length} ordens</div></div>
+      <div class="card kpi"><div class="l">A pagar de meses fechados</div><div class="v">${brl(soma(aPagar.filter(c=>c.competencia.slice(0,7)<atual)))}</div><div class="s">antes de ${nomeMesK(atual)}</div></div>
+      <div class="card kpi"><div class="l">Pagas em ${ano}</div><div class="v">${brl(soma(com.filter(c=>c.status==='paga'&&(c.pago_em||'').startsWith(ano))))}</div></div>
+      <div class="card kpi"><div class="l">Indicadores recebendo</div><div class="v">${inds.filter(i=>situacaoIndicador(i).cls==='st-concluida').length} de ${inds.filter(i=>i.ativo).length}</div></div>
+    </div>
+    <div class="card"><div class="toolbar" style="margin:0 0 10px"><h2 style="margin:0">Fechamento do mês</h2><div class="spacer"></div>
+      <select id="iMes">${[...new Set([sel,...meses])].map(k=>`<option value="${k}">${nomeMesK(k)}</option>`).join('')}</select>
+      ${doMes.length?'<button class="btn sm" id="iCsv">Baixar CSV</button>':''}</div>
+      ${Object.keys(porInd).length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Indicador</th><th>PIX</th><th class="num">Ordens</th><th class="num">A pagar</th><th class="num">Pago</th><th class="num">Sem direito</th><th></th></tr></thead><tbody>
+      ${Object.entries(porInd).map(([id,p])=>{ const i=inds.find(x=>x.id===id)||{}; return `<tr><td><b>${esc(i.nome||'—')}</b></td><td class="small">${i.pix_chave?esc((i.pix_tipo?i.pix_tipo+': ':'')+i.pix_chave):'<span class="muted">sem PIX</span>'}</td><td class="num">${p.n}</td><td class="num"><b>${brl(p.aPagar)}</b></td><td class="num">${brl(p.pago)}</td><td class="num muted">${brl(p.perdido)}</td>
+        <td>${p.aPagar>0?`<button class="btn sm pri" data-pagar="${id}">Registrar pagamento</button>`:''}</td></tr>`; }).join('')}</tbody></table></div>`
+      :`<div class="empty">Nenhuma comissão em ${nomeMesK(sel)}. As comissões aparecem aqui quando um cliente com indicador paga uma ordem.</div>`}
+    </div>
+    <div class="card"><h2>Indicadores</h2>${inds.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Indicador</th><th class="num">Comissão padrão</th><th class="num">Clientes</th><th>Situação</th><th class="num">A pagar</th></tr></thead><tbody>
+      ${inds.map(i=>{ const s=situacaoIndicador(i); return `<tr class="click" data-ind="${i.id}"><td><b>${esc(i.nome)}</b><div class="muted small">${esc(fmtDoc(i.documento||''))}${i.telefone?' · '+esc(i.telefone):''}</div></td><td class="num">${pct(i.percentual_padrao)}</td><td class="num">${s.clis.length}</td>
+        <td><span class="pill ${s.cls}">${esc(s.txt)}</span>${s.ult?`<div class="muted small">Último cliente ativado em ${dt(s.ult)}</div>`:''}</td><td class="num">${brl(soma(aPagar.filter(c=>c.indicador_id===i.id)))}</td></tr>`; }).join('')}
+      </tbody></table></div>`:`<div class="empty">Cadastre um indicador e depois escolha ele no cadastro dos clientes que ele trouxe.</div>`}
+      <p class="small muted" style="margin:12px 0 0">Regra: a comissão é calculada sobre o <b>total que o cliente paga</b> (premiações + taxa + TED) e nasce quando o cliente paga a ordem. O indicador só recebe se tiver ativado um <b>cliente novo</b> (primeira ordem paga) nos 3 meses anteriores ao pagamento; ao ativar um novo, volta a receber de toda a carteira dali em diante. O período parado não é pago depois.</p>
+    </div>`;
+  $('#iMes').value=sel; $('#iMes').onchange=e=>{ S.indMes=e.target.value; vIndicadores(); };
+  document.querySelectorAll('[data-ind]').forEach(tr=>tr.onclick=()=>formIndicador(tr.dataset.ind));
+  document.querySelectorAll('[data-pagar]').forEach(b=>b.onclick=()=>registrarPagtoComissao(b.dataset.pagar, sel));
+  $('#iCsv') && ($('#iCsv').onclick=()=>{
+    const ord=id=>(S.ordens.find(o=>o.id===id)||{}).numero||'';
+    const st={a_pagar:'A pagar',paga:'Paga',sem_direito:'Sem direito'};
+    const linhas=[['Indicador','Cliente','Ordem','Pago pelo cliente em','Total pago pelo cliente','%','Comissão','Situação','Motivo','Pago ao indicador em']].concat(doMes.map(c=>[nomeInd(c.indicador_id),nomeCli(c.cliente_id),ord(c.ordem_id),dt(c.pago_cliente_em),String(c.base).replace('.',','),String(c.percentual).replace('.',','),String(c.valor).replace('.',','),st[c.status],c.motivo||'',c.pago_em?dIso(c.pago_em):'']));
+    const b=new Blob(['﻿'+linhas.map(l=>l.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`comissoes-${sel}.csv`; a.click(); });
+}
+function formIndicador(id){
+  const i=(S.inds||[]).find(x=>x.id===id)||{ativo:true, percentual_padrao:0};
+  const s=id?situacaoIndicador(i):null, com=(S.comis||[]).filter(c=>c.indicador_id===id);
+  const st={a_pagar:['A pagar','st-pago_cliente'],paga:['Paga','st-concluida'],sem_direito:['Sem direito','st-cancelada']};
+  const ord=oid=>(S.ordens.find(o=>o.id===oid)||{}).numero||'—', nomeCli=cid=>(S.clientes.find(c=>c.id===cid)||{}).nome||'—';
+  abrirModal(`<h1>${id?esc(i.nome):'Novo indicador'}</h1>
+    ${s?`<p style="margin-top:0"><span class="pill ${s.cls}">${esc(s.txt)}</span></p>`:''}
+    <form id="iForm">
+      <div class="row"><div class="f"><label>Nome</label><input id="iNome" required value="${esc(i.nome||'')}"></div>
+      <div class="f"><label>CPF ou CNPJ</label><input id="iDoc" inputmode="numeric" value="${esc(fmtDoc(i.documento||''))}"></div></div>
+      <div class="row"><div class="f"><label>Telefone</label><input id="iTel" value="${esc(i.telefone||'')}"></div>
+      <div class="f"><label>E-mail</label><input id="iEmail" type="email" value="${esc(i.email||'')}"></div></div>
+      <div class="row"><div class="f"><label>Tipo da chave PIX</label><select id="iPixT">${['','CPF','CNPJ','E-mail','Telefone','Aleatória'].map(t=>`<option ${t===(i.pix_tipo||'')?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="f"><label>Chave PIX</label><input id="iPix" value="${esc(i.pix_chave||'')}"></div></div>
+      <div class="row"><div class="f"><label>Comissão padrão (% do total que o cliente paga)</label><input id="iPct" required inputmode="decimal" value="${String(i.percentual_padrao).replace('.',',')}"></div>
+      <div class="f"><label>&nbsp;</label><label><input type="checkbox" id="iAtivo" style="width:auto" ${i.ativo?'checked':''}> Indicador ativo</label></div></div>
+      <div class="f"><label>Observações</label><textarea id="iObs" rows="2">${esc(i.observacao||'')}</textarea></div>
+      <p class="small muted">O percentual vale para os próximos pagamentos. Para um cliente com percentual diferente, ajuste no cadastro do cliente.</p>
+      <button class="btn pri" id="iBtn">Salvar</button> ${id&&!com.length?'<button type="button" class="btn" id="iExc">Excluir</button>':''}
+    </form>
+    ${id?`<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)"><b>Carteira (${s.clis.length})</b>
+      ${s.clis.length?`<table class="tbl" style="margin-top:6px"><thead><tr><th>Cliente</th><th class="num">Comissão</th><th>1ª ordem paga</th></tr></thead><tbody>${s.clis.map(c=>`<tr><td>${esc(c.nome)}</td><td class="num">${pct(c.comissao_percentual!=null?c.comissao_percentual:i.percentual_padrao)}${c.comissao_percentual!=null?' <span class="muted small">(específica)</span>':''}</td><td>${primeiroPagoCliente(c.id)?dt(primeiroPagoCliente(c.id)):'<span class="muted">ainda não pagou</span>'}</td></tr>`).join('')}</tbody></table>`:'<p class="small muted">Nenhum cliente ainda. Escolha este indicador no cadastro do cliente (Clientes → editar).</p>'}</div>
+    <div style="margin-top:14px"><b>Comissões</b>${com.length?`<div class="tblwrap"><table class="tbl" style="margin-top:6px"><thead><tr><th>Pagamento do cliente</th><th>Cliente · ordem</th><th class="num">Base</th><th class="num">Comissão</th><th>Situação</th></tr></thead><tbody>
+      ${com.map(c=>`<tr><td>${dt(c.pago_cliente_em)}</td><td>${esc(nomeCli(c.cliente_id))} · #${ord(c.ordem_id)}</td><td class="num">${brl(c.base)} × ${pct(c.percentual)}</td><td class="num"><b>${brl(c.valor)}</b></td>
+        <td><span class="pill ${st[c.status][1]}">${st[c.status][0]}</span>${c.status==='paga'?`<div class="small muted">em ${dIso(c.pago_em)}${c.comprovante?` · <a href="#" data-file="${esc(c.comprovante)}">comprovante</a>`:''}</div>`:c.motivo?`<div class="small muted">${esc(c.motivo)}</div>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<p class="small muted">Nenhuma comissão ainda.</p>'}</div>`:''}`);
+  document.querySelectorAll('#modalBody [data-file]').forEach(a=>a.onclick=e=>{e.preventDefault(); abrirArquivo(a.dataset.file);});
+  $('#iExc') && ($('#iExc').onclick=()=>busy($('#iExc'),async()=>{ if(!confirm('Excluir este indicador? Os clientes dele ficam sem indicador.')) return; const {error}=await sb.from('prem_indicadores').delete().eq('id',id); if(error) throw error; fecharModal(); toast('Indicador excluído.'); recarregar(); }));
+  $('#iForm').onsubmit=e=>{e.preventDefault(); busy($('#iBtn'),async()=>{
+    const doc=soDig($('#iDoc').value);
+    if(doc && !(doc.length===11?cpfValido(doc):doc.length===14?cnpjValido(doc):false)) throw new Error('CPF ou CNPJ inválido.');
+    const p=parseValor($('#iPct').value); if(!(p>=0&&p<=100)) throw new Error('Comissão deve ficar entre 0 e 100%.');
+    const row={nome:$('#iNome').value.trim(), documento:doc?fmtDoc(doc):null, telefone:$('#iTel').value.trim()||null, email:$('#iEmail').value.trim().toLowerCase()||null,
+      pix_tipo:$('#iPixT').value||null, pix_chave:$('#iPix').value.trim()||null, percentual_padrao:p, ativo:$('#iAtivo').checked, observacao:$('#iObs').value.trim()||null};
+    const {error}= id ? await sb.from('prem_indicadores').update(row).eq('id',id) : await sb.from('prem_indicadores').insert(row);
+    if(error) throw error; fecharModal(); toast('Indicador salvo.'); recarregar();
+  });};
+}
+function registrarPagtoComissao(indId, mes){
+  const i=(S.inds||[]).find(x=>x.id===indId)||{};
+  const lista=(S.comis||[]).filter(c=>c.indicador_id===indId && c.status==='a_pagar' && c.competencia.slice(0,7)===mes);
+  const total=lista.reduce((t,c)=>t+Number(c.valor),0);
+  abrirModal(`<h1>Pagamento de comissão</h1>
+    <p style="margin-top:0"><b>${esc(i.nome||'')}</b> · ${nomeMesK(mes)} · ${lista.length} ordem(ns)</p>
+    <div class="card" style="background:#fafbfc"><div class="muted small">Total a pagar</div><div style="font-size:26px;font-weight:600">${brl(total)}</div>
+      <div class="small" style="margin-top:6px">${i.pix_chave?`PIX ${esc(i.pix_tipo||'')}: <b>${esc(i.pix_chave)}</b>`:'<span class="muted">Indicador sem chave PIX cadastrada</span>'}</div></div>
+    <div class="row"><div class="f"><label>Data do pagamento</label><input id="pcData" type="date" value="${new Date().toLocaleDateString('sv-SE')}"></div>
+    <div class="f"><label>Comprovante (opcional)</label><input id="pcArq" type="file" accept="image/*,application/pdf"></div></div>
+    <button class="btn pri" id="pcOk">Confirmar pagamento</button> <button class="btn" onclick="fecharModal()">Cancelar</button>`);
+  $('#pcOk').onclick=()=>busy($('#pcOk'),async()=>{
+    const data=$('#pcData').value; if(!data) throw new Error('Informe a data do pagamento.');
+    const comp=await upload('indicadores', indId, 'comissao-'+mes, $('#pcArq').files[0]);
+    const {error}=await sb.from('prem_comissoes').update({status:'paga', pago_em:data, comprovante:comp}).in('id', lista.map(c=>c.id)).eq('status','a_pagar');
+    if(error) throw error; fecharModal(); toast('Pagamento registrado.'); recarregar();
+  });
 }
 
 // ================= ADMIN: FATURAMENTO =================
