@@ -342,10 +342,80 @@ async function upload(clienteId, ordemId, tipo, file){
   return path;
 }
 async function abrirArquivo(path){
+  if(/\/nfse-[^/]*\.xml$/.test(path)) return verDanfse(path);
   const w = window.open('', '_blank');
   const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 300);
   if(error){ w && w.close(); return toast(error.message, true); }
   if(w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+
+// ---------- NFS-e automática (API da Receita) ----------
+async function montarNfseAuto(o){
+  const box=$('#nfAuto'); if(!box) return;
+  const [{data:cfg},{data:hist}] = await Promise.all([ sb.from('prem_config').select('nfse_ambiente,nfse_cert_path,nfse_cert_info').single(),
+    sb.from('prem_nfse').select('*').eq('ordem_id',o.id).order('created_at',{ascending:false}) ]);
+  if(!$('#nfAuto')) return;
+  const prod = cfg?.nfse_ambiente===1, info=cfg?.nfse_cert_info;
+  const semCert = !cfg?.nfse_cert_path;
+  const ST={autorizada:['Autorizada','st-concluida'],rejeitada:['Rejeitada','st-cancelada'],erro:['Falha','st-cancelada'],enviando:['Enviando','st-enviada']};
+  box.innerHTML = `<div class="toolbar" style="margin:0 0 6px"><b>⚡ Emissão automática</b><div class="spacer"></div>
+      <span class="pill ${prod?'st-concluida':'st-enviada'}">${prod?'Produção (nota real)':'Homologação (teste, sem valor fiscal)'}</span></div>
+    ${semCert?`<p class="small" style="margin:0">Envie o certificado A1 em <b>Contrato → NFS-e automática</b> para habilitar.</p>`:
+    `<p class="small muted" style="margin:0 0 10px">O sistema monta a nota com os mesmos dados abaixo (deduções por favorecido, endereço da empresa para quem não tem), assina com o certificado ${info?esc(info.titular||''):''} e envia direto para a Receita.${prod?' A ordem é concluída e o cliente avisado na hora.':' Em homologação a nota é só um teste: a ordem não muda.'}</p>
+     <button type="button" class="btn ${prod?'pri':''}" id="nfAutoBtn">${prod?'⚡ Emitir NFS-e agora':'🧪 Testar emissão (homologação)'}</button>`}
+    ${(hist||[]).length?`<div class="tblwrap" style="margin-top:10px"><table class="tbl"><thead><tr><th>Quando</th><th>Ambiente</th><th>Situação</th><th>Nota</th></tr></thead><tbody>
+      ${hist.map(h=>`<tr><td class="small">${dth(h.created_at)}</td><td class="small">${h.ambiente===1?'Produção':'Homologação'}</td><td><span class="pill ${ST[h.status]?.[1]||''}">${ST[h.status]?.[0]||h.status}</span>${h.mensagem?`<div class="small" style="color:#8a1c1c;max-width:420px">${esc(h.mensagem)}</div>`:''}</td>
+        <td class="small">${h.numero?'nº '+esc(h.numero):''}${h.xml_nfse_path?` <button class="btn sm" data-file="${esc(h.xml_nfse_path)}">📄 DANFSe</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+  box.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>abrirArquivo(b.dataset.file));
+  $('#nfAutoBtn') && ($('#nfAutoBtn').onclick=()=>{
+    const go=()=>busy($('#nfAutoBtn'),async()=>{
+      const {data,error}=await sb.functions.invoke('prem-nfse',{body:{acao:'emitir',ordem_id:o.id}});
+      if(error){ let m=error.message; try{ m=(await error.context.json()).error||m; }catch(_){} await montarNfseAuto(o); throw new Error(m); }
+      toast(data.ambiente===1?`NFS-e nº ${data.numero} emitida e ordem concluída.`:`Teste ok: nota de homologação nº ${data.numero} gerada.`);
+      if(data.ambiente===1){ fecharModal(); recarregar(); } else montarNfseAuto(o);
+    });
+    const btn=$('#nfAutoBtn');
+    if(!prod || btn.dataset.conf==='1') return go();
+    btn.dataset.conf='1'; btn.textContent=`Confirmar: emitir NFS-e real de ${brl(o.valor_nota)}`; btn.classList.add('danger');
+    setTimeout(()=>{ if(btn.isConnected && btn.dataset.conf==='1'){ btn.dataset.conf=''; btn.textContent='⚡ Emitir NFS-e agora'; btn.classList.remove('danger'); } }, 8000);
+  });
+}
+
+// DANFSe gerado no navegador a partir do XML oficial da NFS-e
+async function verDanfse(path){
+  const w = window.open('', '_blank');
+  const { data, error } = await sb.storage.from(BUCKET).download(path);
+  if(error){ w&&w.close(); return toast(error.message,true); }
+  const xml = new DOMParser().parseFromString(await data.text(), 'application/xml');
+  const g = (n, ctx=xml) => ctx.getElementsByTagNameNS('*', n)[0]?.textContent || '';
+  const all = (n, ctx=xml) => [...ctx.getElementsByTagNameNS('*', n)];
+  const inf = all('infNFSe')[0] || xml; const dps = all('infDPS')[0] || xml;
+  const chave = (inf.getAttribute && inf.getAttribute('Id')||'').replace(/^NFS/,'');
+  const emit = all('emit')[0] || xml, toma = all('toma', dps)[0] || xml;
+  const m = v => v? Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—';
+  const doc = (ctx) => fmtDoc(g('CNPJ',ctx)||g('CPF',ctx));
+  const amb = g('tpAmb', dps)==='2';
+  const docs = all('docDedRed', dps).map(d=>`<tr><td>${esc(g('nDoc',d)||g('nDocFisc',d))}</td><td>${esc(g('xNome',d))}</td><td>${esc(fmtDoc(g('CPF',d)||g('CNPJ',d)))}</td><td>${dIso(g('dtEmiDoc',d))}</td><td style="text-align:right">${m(g('vDeducaoReducao',d))}</td></tr>`).join('');
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>DANFSe ${esc(g('nNFSe',inf))}</title>
+  <style>body{font:12px/1.4 Arial,sans-serif;color:#111;margin:24px;max-width:820px}h1{font-size:17px;margin:0}h2{font-size:12px;background:#eef1f3;padding:4px 6px;margin:14px 0 6px;text-transform:uppercase}
+  .g{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px}.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 18px}b{font-weight:600}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ddd;padding:3px 4px;text-align:left;font-size:11px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1B3B4F;padding-bottom:8px}.k{font-family:monospace;font-size:11px;word-break:break-all}.warn{background:#fde8e8;color:#8a1c1c;padding:8px;font-weight:700;text-align:center;margin:8px 0}
+  pre{white-space:pre-wrap;font:inherit;margin:0}@media print{button{display:none}body{margin:10mm}}</style></head><body>
+  <button onclick="print()" style="float:right">Imprimir / salvar PDF</button>
+  <div class="top"><div><h1>DANFSe – Documento Auxiliar da NFS-e</h1><div>NFS-e nº <b>${esc(g('nNFSe',inf))}</b> · Emitida em ${dth(g('dhProc',inf)||g('dhEmi',dps))} · Competência ${dIso(g('dCompet',dps))}</div></div>
+  <div style="text-align:right">Município: ${esc(g('xLocEmi',inf)||'')}</div></div>
+  ${amb?'<div class="warn">AMBIENTE DE HOMOLOGAÇÃO (TESTE) – SEM VALOR FISCAL</div>':''}
+  <div class="k">Chave de acesso: ${esc(chave)}</div>
+  <h2>Prestador</h2><div class="g"><div><b>${esc(g('xNome',emit))}</b></div><div>CNPJ ${esc(doc(emit))}</div></div>
+  <h2>Tomador</h2><div class="g"><div><b>${esc(g('xNome',toma))}</b></div><div>${esc(doc(toma))}</div><div>${esc([g('xLgr',toma),g('nro',toma),g('xBairro',toma)].filter(Boolean).join(', '))}</div><div>${esc(g('email',toma))}</div></div>
+  <h2>Serviço</h2><div class="g"><div>Código nacional: <b>${esc(g('cTribNac',dps))}</b> ${g('cTribMun',dps)?'· municipal '+esc(g('cTribMun',dps)):''}</div><div>NBS: ${esc(g('cNBS',dps))}</div></div>
+  <div style="margin-top:6px"><pre>${esc(g('xDescServ',dps))}</pre></div>
+  ${docs?`<h2>Deduções (documentos)</h2><table><thead><tr><th>Documento</th><th>Fornecedor</th><th>CPF/CNPJ</th><th>Data</th><th style="text-align:right">Valor</th></tr></thead><tbody>${docs}</tbody></table>`:''}
+  <h2>Valores</h2><div class="g3"><div>Valor do serviço: <b>${m(g('vServ',dps))}</b></div><div>Deduções: <b>${m(g('vDR',inf)||all('vDeducaoReducao',dps).reduce((a,e)=>a+Number(e.textContent),0))}</b></div><div>Base de cálculo ISSQN: <b>${m(g('vBC',inf))}</b></div>
+  <div>ISSQN: ${g('vISSQN',inf)?m(g('vISSQN',inf)):'Simples Nacional'}</div><div>Retenções: ${m(g('vTotalRet',inf)||0)}</div><div>Valor líquido: <b>${m(g('vLiq',inf)||g('vServ',dps))}</b></div></div>
+  <p style="margin-top:16px;font-size:10px;color:#555">Consulte a autenticidade em https://www.nfse.gov.br/ConsultaPublica com a chave de acesso acima. Documento gerado pelo sistema Mayway a partir do XML oficial da NFS-e.</p>
+  </body></html>`;
+  if(w){ w.document.open(); w.document.write(html); w.document.close(); }
 }
 
 // ================= AUTH =================
@@ -638,6 +708,8 @@ async function detalhe(id){
   if(!admin && o.status==='pago_cliente') acao = `<div class="action"><p class="muted" style="margin:0">Pagamento recebido. Estamos pagando os favorecidos em seu nome; os comprovantes aparecem aqui assim que terminarmos.</p></div>`;
   // 4) admin emite a NFS-e com as deduções
   if(admin && o.status==='favorecidos_pagos') acao = `<div class="action"><h2>Emitir a NFS-e</h2>
+      <div id="nfAuto" class="card" style="background:#F3F7F5;border-color:#CFE0D7;padding:14px;margin-bottom:12px"><span class="muted small">Carregando emissão automática…</span></div>
+      <details><summary style="cursor:pointer;margin:4px 0 10px"><b>Emitir manualmente no portal (Emissor Nacional)</b></summary>
       <div class="nfse-box"><div class="toolbar" style="margin:0 0 8px"><b>Dados para a NFS-e (Emissor Nacional)</b><div class="spacer"></div><button type="button" class="btn sm" id="nfCopiar">Copiar discriminação</button></div>
         <table class="tbl nfse-tab"><tbody id="nfValores"></tbody></table>
         <label style="margin-top:10px">Deduções – documentos (um por favorecido)</label>
@@ -649,7 +721,7 @@ async function detalhe(id){
         <label style="margin-top:10px">Discriminação dos serviços</label><textarea id="nfTexto" readonly style="min-height:260px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
         <p class="small muted" style="margin:6px 0 0">Código 17.06.01 · NBS 1.1406.19.00. Valor do serviço = total; deduções = repasses + TED (por documentos); base de cálculo do ISS = taxa.</p></div>
       <div class="row"><div class="f"><label>Nº da NFS-e</label><input id="aNum"></div><div class="f"><label>PDF da NFS-e</label><input id="aFile" type="file" accept=".pdf,image/*"></div></div>
-      <button class="btn pri" id="aBtn">Enviar NFS-e e concluir</button></div>`;
+      <button class="btn pri" id="aBtn">Enviar NFS-e e concluir</button></details></div>`;
   if(!admin && o.status==='favorecidos_pagos') acao = `<div class="action"><p class="muted" style="margin:0">Todos os favorecidos foram pagos (comprovantes acima). A nota fiscal será emitida em seguida.</p></div>`;
   const podeCancelar = !['concluida','cancelada','favorecidos_pagos'].includes(o.status) && (admin || o.status==='enviada');
   abrirModal(`
@@ -722,6 +794,7 @@ async function detalhe(id){
       if(error) throw error; toast('Pagamentos registrados. Agora emita a NFS-e.'); fecharModal(); recarregar(); });
   }
   document.querySelectorAll('[data-endfav]').forEach(b=>b.onclick=()=>formFav(b.dataset.endfav, o.cliente_id, ()=>detalhe(o.id)));
+  if(admin && o.status==='favorecidos_pagos') montarNfseAuto(o);
   if(admin && o.status==='favorecidos_pagos'){
     const rep_=Number(o.valor_pagamento), tx=Number(o.valor_taxa), ted=Number(o.custo_transferencia||0);
     $('#nfValores').innerHTML=[['Valor total do serviço',rep_+tx+ted],['Deduções (repasses + TED)',rep_+ted],['Base de cálculo do ISS (taxa)',tx]].map(([l,v])=>`<tr><td>${l}</td><td class="num"><b>${brl(v)}</b></td></tr>`).join('');
@@ -877,7 +950,7 @@ function vFavorecidos(){
       <button class="btn pri" id="fvNovo">+ Novo favorecido</button></div>
     <p class="muted" style="margin-top:-6px">Preferência: <b>PIX</b> (sem custo). Pagamentos por <b>TED</b> têm custo de ${brl(S.custoTed)} por favorecido, somado à nota.</p>
     <div class="card">${lista.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Nome</th>${admin&&!cli?'<th>Cliente</th>':''}<th>CPF</th><th>Forma</th><th>Dados de pagamento</th><th></th></tr></thead><tbody>
-      ${lista.map(f=>`<tr><td><b>${esc(f.nome)}</b>${f.cep?'':' <span class="pill st-cancelada" title="Necessário para a nota fiscal">sem endereço</span>'}</td>${admin&&!cli?`<td>${esc(nomeCli(f.cliente_id))}</td>`:''}<td>${esc(fmtDoc(f.cpf))}</td>
+      ${lista.map(f=>`<tr><td><b>${esc(f.nome)}</b>${f.cep?'':' <span class="small muted" title="Na nota fiscal é usado o endereço da empresa">· endereço da empresa</span>'}</td>${admin&&!cli?`<td>${esc(nomeCli(f.cliente_id))}</td>`:''}<td>${esc(fmtDoc(f.cpf))}</td>
         <td>${f.forma_pagamento==='pix'?'<span class="pill st-concluida">PIX</span>':'<span class="pill st-enviada">TED +'+brl(S.custoTed)+'</span>'}</td>
         <td class="small">${esc(favDados(f).replace(/^(PIX|TED) · /,''))}</td>
         <td class="num"><button class="btn sm" data-ed="${f.id}">Editar</button> <button class="btn sm danger" data-del="${f.id}">Remover</button></td></tr>`).join('')}
@@ -891,6 +964,37 @@ function vFavorecidos(){
     $('#rmOk').onclick=()=>busy($('#rmOk'),async()=>{ const {error}=await sb.from('prem_favorecidos').update({ativo:false}).eq('id',f.id); if(error) throw error;
       fecharModal(); await carregar(); vFavorecidos(); }); });
 }
+// ---------- endereço com busca por CEP (usado em cliente e favorecido) ----------
+const fmtCep = c => soDig(c||'').replace(/^(\d{5})(\d{3})$/,'$1-$2');
+function blocoEndereco(p, o, titulo, dica){
+  o=o||{};
+  return `<div style="margin:6px 0 4px"><b>${titulo}</b> ${dica?`<span class="muted small">${dica}</span>`:''}</div>
+    <input type="hidden" id="${p}Ibge" value="${esc(o.cod_ibge||'')}">
+    <div class="row"><div class="f" style="max-width:170px"><label>CEP</label><input id="${p}Cep" inputmode="numeric" placeholder="00000-000" value="${esc(fmtCep(o.cep))}"></div>
+      <div class="f"><label>Rua / avenida</label><input id="${p}Log" value="${esc(o.logradouro||'')}"></div></div>
+    <div class="row"><div class="f" style="max-width:120px"><label>Número</label><input id="${p}Num" value="${esc(o.numero||'')}"></div>
+      <div class="f"><label>Complemento</label><input id="${p}Comp" value="${esc(o.complemento||'')}"></div>
+      <div class="f"><label>Bairro</label><input id="${p}Bairro" value="${esc(o.bairro||'')}"></div></div>
+    <div class="row"><div class="f"><label>Cidade</label><input id="${p}Cid" value="${esc(o.cidade||'')}"></div>
+      <div class="f" style="max-width:90px"><label>UF</label><input id="${p}Uf" maxlength="2" value="${esc(o.uf||'')}"></div></div>`;
+}
+function ligarCep(p){
+  const busca=async()=>{ const c=soDig($('#'+p+'Cep').value); if(c.length!==8) return; $('#'+p+'Cep').value=fmtCep(c);
+    try{ const r=await fetch(`https://viacep.com.br/ws/${c}/json/`).then(r=>r.json()); if(r.erro) return toast('CEP não encontrado. Confira os números.',true);
+      if(r.logradouro) $('#'+p+'Log').value=r.logradouro; if(r.bairro) $('#'+p+'Bairro').value=r.bairro; $('#'+p+'Cid').value=r.localidade||''; $('#'+p+'Uf').value=r.uf||''; $('#'+p+'Ibge').value=r.ibge||''; $('#'+p+'Num').focus(); }catch(_){} };
+  $('#'+p+'Cep').onblur=busca; $('#'+p+'Cep').addEventListener('input',()=>{ if(soDig($('#'+p+'Cep').value).length===8) busca(); });
+}
+function lerEndereco(p, obrigatorio){
+  const v=k=>$('#'+p+k).value.trim(), cep=soDig(v('Cep'));
+  const algum=cep||v('Log')||v('Num')||v('Bairro');
+  if(!algum){ if(obrigatorio) throw new Error('Informe o endereço (CEP).'); return {cep:null,logradouro:null,numero:null,complemento:null,bairro:null,cidade:null,uf:null,cod_ibge:null}; }
+  if(cep.length!==8) throw new Error('Informe o CEP com 8 números.');
+  const e={cep, logradouro:v('Log'), numero:v('Num'), complemento:v('Comp')||null, bairro:v('Bairro'), cidade:v('Cid'), uf:v('Uf').toUpperCase(), cod_ibge:soDig(v('Ibge'))||null};
+  if(!e.logradouro||!e.numero||!e.bairro||!e.cidade||e.uf.length!==2) throw new Error('Preencha o endereço completo: rua, número, bairro, cidade e UF (use "SN" se não houver número).');
+  if(!e.cod_ibge) throw new Error('Não identifiquei o município pelo CEP. Saia do campo CEP para buscar de novo.');
+  return e;
+}
+
 function formFav(id, clienteId, onSaved){
   const f = S.favs.find(x=>x.id===id) || {forma_pagamento:'pix', pix_tipo:'cpf'};
   abrirModal(`<h1>${id?'Editar favorecido':'Novo favorecido'}</h1>
@@ -905,14 +1009,7 @@ function formFav(id, clienteId, onSaved){
         <div class="f"><label>Tipo de conta</label><select id="fvTipoConta"><option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select></div></div>
         <div class="row"><div class="f"><label>Agência</label><input id="fvAg" value="${esc(f.agencia||'')}"></div>
         <div class="f"><label>Conta com dígito</label><input id="fvConta" value="${esc(f.conta||'')}"></div></div></div>
-      <div style="margin:6px 0 4px"><b>Endereço</b> <span class="muted small">(exigido na nota fiscal)</span></div>
-      <div class="row"><div class="f" style="max-width:170px"><label>CEP</label><input id="fvCep" required inputmode="numeric" placeholder="00000-000" value="${esc(f.cep?f.cep.replace(/^(\d{5})(\d{3})$/,'$1-$2'):'')}"></div>
-        <div class="f"><label>Rua / avenida</label><input id="fvLog" required value="${esc(f.logradouro||'')}"></div></div>
-      <div class="row"><div class="f" style="max-width:120px"><label>Número</label><input id="fvNum" required value="${esc(f.numero||'')}"></div>
-        <div class="f"><label>Complemento</label><input id="fvComp" value="${esc(f.complemento||'')}"></div>
-        <div class="f"><label>Bairro</label><input id="fvBairro" required value="${esc(f.bairro||'')}"></div></div>
-      <div class="row"><div class="f"><label>Cidade</label><input id="fvCid" required value="${esc(f.cidade||'')}"></div>
-        <div class="f" style="max-width:90px"><label>UF</label><input id="fvUf" required maxlength="2" value="${esc(f.uf||'')}"></div></div>
+      ${blocoEndereco('fe', f, 'Endereço', `(vai na nota fiscal; se não souber, deixe em branco: usamos o endereço da empresa ${esc(S.clientes?.find(c=>c.id===(f.cliente_id||clienteId))?.nome||S.cliente?.nome||'')})`)}
       <div id="fvMsg"></div>
       <button class="btn pri" id="fvBtn">Salvar</button>
     </form>`);
@@ -920,17 +1017,12 @@ function formFav(id, clienteId, onSaved){
   const alterna=()=>{ const pix=$('#fvForma').value==='pix'; $('#fvPix').classList.toggle('hidden',!pix); $('#fvTed').classList.toggle('hidden',pix); };
   $('#fvForma').onchange=alterna; alterna();
   $('#fvPixTipo').onchange=()=>{ if($('#fvPixTipo').value==='cpf' && !$('#fvPixChave').value) $('#fvPixChave').value=soDig($('#fvCpf').value); };
-  $('#fvCep').onblur=async()=>{ const c=soDig($('#fvCep').value); if(c.length!==8) return; $('#fvCep').value=c.replace(/^(\d{5})(\d{3})$/,'$1-$2');
-    try{ const r=await fetch(`https://viacep.com.br/ws/${c}/json/`).then(r=>r.json()); if(r.erro) return toast('CEP não encontrado. Preencha o endereço manualmente.',true);
-      if(r.logradouro) $('#fvLog').value=r.logradouro; if(r.bairro) $('#fvBairro').value=r.bairro; $('#fvCid').value=r.localidade||''; $('#fvUf').value=r.uf||''; $('#fvNum').focus(); }catch(_){} };
+  ligarCep('fe');
   $('#fvForm').onsubmit=e=>{ e.preventDefault(); busy($('#fvBtn'),async()=>{
     const cpf=soDig($('#fvCpf').value);
     if(!(cpfValido(cpf)||cnpjValido(cpf))) throw new Error('CPF inválido. Confira os números.');
     const forma=$('#fvForma').value;
-    const cep=soDig($('#fvCep').value); if(cep.length!==8) throw new Error('Informe o CEP com 8 números.');
-    const row={ nome:$('#fvNome').value.trim(), cpf, forma_pagamento:forma, cep, logradouro:$('#fvLog').value.trim(), numero:$('#fvNum').value.trim(),
-      complemento:$('#fvComp').value.trim()||null, bairro:$('#fvBairro').value.trim(), cidade:$('#fvCid').value.trim(), uf:$('#fvUf').value.trim().toUpperCase() };
-    if(!row.logradouro||!row.numero||!row.bairro||!row.cidade||row.uf.length!==2) throw new Error('Preencha o endereço completo (rua, número, bairro, cidade e UF).');
+    const row={ nome:$('#fvNome').value.trim(), cpf, forma_pagamento:forma, ...lerEndereco('fe', false) };
     if(forma==='pix'){ row.pix_tipo=$('#fvPixTipo').value; row.pix_chave=$('#fvPixChave').value.trim() || (row.pix_tipo==='cpf'?cpf:'');
       if(!row.pix_chave) throw new Error('Informe a chave PIX.'); }
     else { row.banco=$('#fvBanco').value.trim(); row.agencia=$('#fvAg').value.trim(); row.conta=$('#fvConta').value.trim(); row.tipo_conta=$('#fvTipoConta').value;
@@ -1338,7 +1430,40 @@ async function vContratoAdmin(){
       <p class="muted small" style="margin-top:0">${pend.length} cliente(s) ativo(s) sem contrato assinado.</p>
       <table class="tbl"><tbody>${S.clientes.map(c=>`<tr><td>${esc(c.nome)}</td><td>${c.contrato_aceito_em?`<span class="pill st-concluida">Assinado ${dt(c.contrato_aceito_em)}</span>`:'<span class="pill st-enviada">Pendente</span>'}</td>
         <td class="num">${c.contrato_aceito_em?`<button class="btn sm" data-ver="${c.id}">Ver</button>`:''}</td></tr>`).join('')}</tbody></table>
-      <button class="btn sm" id="cfPrev" style="margin-top:12px">Pré-visualizar modelo</button></div></div>`;
+      <button class="btn sm" id="cfPrev" style="margin-top:12px">Pré-visualizar modelo</button></div></div>
+    <div class="card" style="margin-top:16px"><h2>NFS-e automática (API da Receita)</h2>
+      <div id="nfCertInfo" class="small" style="margin-bottom:10px">${cfg.nfse_cert_info?`Certificado: <b>${esc(cfg.nfse_cert_info.titular||'')}</b> · válido até <b>${dIso((cfg.nfse_cert_info.validade||'').slice(0,10))}</b>${new Date(cfg.nfse_cert_info.validade)<new Date(Date.now()+30*864e5)?' <span class="pill st-cancelada">vence em breve</span>':''}`:(cfg.nfse_cert_path?'Certificado enviado.':'<span class="pill st-enviada">Nenhum certificado enviado</span>')}</div>
+      <div class="row"><div class="f"><label>Certificado A1 (.pfx ou .p12)</label><input id="nfPfx" type="file" accept=".pfx,.p12"></div>
+        <div class="f"><label>Senha do certificado</label><div class="pw"><input id="nfSenha" type="password" autocomplete="new-password"></div></div></div>
+      <button class="btn sm" id="nfCertBtn">Enviar certificado</button> ${cfg.nfse_cert_path?'<button class="btn sm" id="nfCertTeste">Conferir certificado</button>':''}
+      <p class="small muted" style="margin:8px 0 14px">O arquivo fica num local privado do servidor e a senha no cofre (Vault). Ninguém consegue baixá-los pelo sistema.</p>
+      <div class="row"><div class="f"><label>Ambiente</label><select id="nfAmb"><option value="2">Homologação (teste, sem valor fiscal)</option><option value="1">Produção (nota real)</option></select></div>
+        <div class="f"><label>Alíquota do Simples p/ "valor aproximado dos tributos" (%)</label><input id="nfAliq" inputmode="decimal" value="${String(cfg.nfse_aliq_sn??6).replace('.',',')}"></div>
+        <div class="f" style="max-width:140px"><label>Série da DPS</label><input id="nfSerie" value="${esc(cfg.nfse_serie||'1')}"></div></div>
+      <p class="small muted" style="margin:0 0 10px">Código 17.06.01 / municipal 001 · NBS 114061900 · Belo Horizonte. Próxima DPS: produção nº ${cfg.nfse_prox_dps??1}, homologação nº ${cfg.nfse_prox_dps_homolog??1}.</p>
+      <button class="btn pri sm" id="nfSalvar">Salvar configuração da NFS-e</button></div>`;
+  ligarOlhos($('#main'));
+  $('#nfAmb') && ($('#nfAmb').value=String(cfg.nfse_ambiente||2));
+  const conferirCert=async()=>{ const {data,error}=await sb.functions.invoke('prem-nfse',{body:{acao:'info'}});
+    if(error){ let m=error.message; try{ m=(await error.context.json()).error||m; }catch(_){} throw new Error(m); }
+    $('#nfCertInfo').innerHTML=`Certificado: <b>${esc(data.titular)}</b> · CNPJ ${esc(fmtDoc(data.cnpj||''))} · válido até <b>${dIso(data.validade.slice(0,10))}</b> · emissor ${esc(data.emissor)}`;
+    if(data.cnpj && soDig(cfg.contratada_cnpj||'') && data.cnpj!==soDig(cfg.contratada_cnpj)) toast('Atenção: o CNPJ do certificado é diferente do CNPJ da empresa cadastrado.',true);
+    return data; };
+  $('#nfCertBtn').onclick=()=>busy($('#nfCertBtn'),async()=>{
+    const f=$('#nfPfx').files[0], senha=$('#nfSenha').value;
+    if(!f) throw new Error('Escolha o arquivo .pfx do certificado.'); if(!senha) throw new Error('Digite a senha do certificado.');
+    const path=`a1-${Date.now()}.pfx`;
+    const up=await sb.storage.from('nfse-cert').upload(path,f,{upsert:false,contentType:'application/x-pkcs12'}); if(up.error) throw up.error;
+    const r1=await sb.rpc('prem_nfse_salvar_senha',{p_senha:senha}); if(r1.error) throw r1.error;
+    const r2=await sb.from('prem_config').update({nfse_cert_path:path}).eq('id',true); if(r2.error) throw r2.error;
+    $('#nfSenha').value=''; $('#nfPfx').value='';
+    const d=await conferirCert(); toast(`Certificado ok: ${d.titular}, válido até ${dIso(d.validade.slice(0,10))}.`); });
+  $('#nfCertTeste') && ($('#nfCertTeste').onclick=()=>busy($('#nfCertTeste'),async()=>{ const d=await conferirCert(); toast('Certificado lido com sucesso.'); }));
+  $('#nfSalvar').onclick=()=>busy($('#nfSalvar'),async()=>{
+    const amb=Number($('#nfAmb').value), aliq=parseValor($('#nfAliq').value), serie=soDig($('#nfSerie').value)||'1';
+    if(!(aliq>=0&&aliq<100)) throw new Error('Alíquota inválida.');
+    const {error}=await sb.from('prem_config').update({nfse_ambiente:amb,nfse_aliq_sn:aliq,nfse_serie:serie}).eq('id',true); if(error) throw error;
+    toast(amb===1?'Configuração salva: as próximas notas serão REAIS.':'Configuração salva: ambiente de homologação (teste).'); });
   $('#cfSave').onclick=()=>busy($('#cfSave'),async()=>{
     const row={contratada_razao:$('#cfRaz').value.trim()||null, contratada_cnpj:$('#cfCnpj').value.trim()||null, contratada_endereco:$('#cfEnd').value.trim()||null,
       contratada_rep:$('#cfRep').value.trim()||null, contratada_banco:$('#cfBanco').value.trim()||null, contrato_foro:$('#cfForo').value.trim()||null, contrato_exigir:$('#cfExig').checked,
@@ -1374,6 +1499,7 @@ const MANUAL_ADMIN = [
  ['Equipe', ['Menu <b>Equipe</b> → <b>+ Adicionar pessoa</b> para sócios e funcionários.', 'A pessoa entra pelo mesmo link com <b>Primeiro acesso</b> e tem acesso total de administrador.']],
  ['Definir senha de cliente ou da equipe', ['Ninguém consegue ver a senha de outra pessoa: ela fica guardada embaralhada.', 'Para dar uma senha nova: <b>Clientes</b> → abra o cliente → <b>Definir nova senha</b> (ou <b>Equipe</b> → <b>Definir senha</b>).', 'O sistema sugere uma senha forte; clique em <b>Salvar e copiar mensagem</b> e mande para a pessoa em conversa privada.', 'Se o cliente ainda não fez o primeiro acesso, o acesso já é criado com essa senha.']],
  ['Excluir ou arquivar ordens', ['Abra a ordem e role até o fim.', '<b>Excluir ordem</b>: só aparece se não houve pagamento do cliente, pagamento a favorecido nem nota fiscal. Apaga de vez.', '<b>Arquivar ordem</b>: para ordens concluídas ou canceladas. Some das listas (inclusive da tela do cliente), mas continua no faturamento.', 'Para ver ou desarquivar: <b>Ordens</b> → <b>Ver arquivadas</b>.']],
+ ['NFS-e automática', ['Uma vez: em <b>Contrato → NFS-e automática</b>, envie o certificado A1 (.pfx) e digite a senha. Clique em <b>Conferir certificado</b>.', 'Comece em <b>Homologação</b> (teste, sem valor fiscal). Na ordem, etapa <b>Emitir NFS-e</b>, clique em <b>🧪 Testar emissão</b> e confira o DANFSe gerado.', 'Tudo certo? Mude o ambiente para <b>Produção</b>. A partir daí o botão vira <b>⚡ Emitir NFS-e agora</b> (pede confirmação): a nota sai na hora, a ordem é concluída e o cliente recebe o aviso.', 'Favorecido sem endereço: a nota usa o endereço da empresa cliente (cadastre o CEP em <b>Clientes → editar</b>).', 'Se a Receita recusar, o motivo aparece na própria ordem. Ainda dá para emitir manualmente no portal (seção recolhida logo abaixo).']],
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
  ['Pagar os favorecidos', ['Quando o cliente envia o comprovante do PIX, a ordem vira <b>Pagar favorecidos</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido, com botões de copiar. Use a <b>descrição do pagamento</b> pronta em cada PIX/TED.', 'Em cada favorecido, clique em <b>📎 Anexar comprovante</b> e escolha o comprovante dele. Confira a data de pagamento.', 'Se preferir, em vez de um por um, anexe um único PDF com todos os comprovantes.', 'Clique em <b>Registrar pagamentos</b>. O cliente vê o comprovante de cada favorecido na ordem.']],
@@ -1506,6 +1632,7 @@ function formCliente(id){
       <div class="f"><label>Telefone</label><input id="cTel" value="${esc(c.telefone||'')}"></div></div>
       <div class="row"><div class="f"><label>E-mail de acesso</label><input id="cEmail" type="email" required value="${esc(c.email||'')}"></div>
       <div class="f"><label>Sua taxa sobre cada pagamento (%)</label><input id="cTaxa" required inputmode="decimal" value="${String(c.taxa_percentual).replace('.',',')}"></div></div>
+      ${blocoEndereco('ce', c, 'Endereço da empresa', '(vai na nota fiscal e é usado para os favorecidos sem endereço)')}
       <div class="f"><label><input type="checkbox" id="cAtivo" style="width:auto" ${c.ativo?'checked':''}> Cliente ativo</label></div>
       <p class="muted small">A taxa vale para as próximas ordens. Ordens já enviadas mantêm a taxa da época (você pode ajustar ao emitir a nota).</p>
       <button class="btn pri" id="cBtn">Salvar</button>
@@ -1515,12 +1642,14 @@ function formCliente(id){
       <button type="button" class="btn sm" id="cSenha">Definir nova senha</button></div>`}`);
   const tipoDoc=()=>{ const d=soDig($('#cDoc').value); $('#cDocTipo').textContent = d.length===11?(cpfValido(d)?'Pessoa física (CPF)':'CPF inválido'):d.length===14?(cnpjValido(d)?'Empresa (CNPJ)':'CNPJ inválido'):''; };
   $('#cSenha') && ($('#cSenha').onclick=()=>definirSenhaAdmin(c.email, c.nome));
+  ligarCep('ce');
   $('#cDoc').oninput=tipoDoc; $('#cDoc').onblur=()=>{ const d=soDig($('#cDoc').value); if(d.length===11||d.length===14) $('#cDoc').value=fmtDoc(d); }; tipoDoc();
   $('#cForm').onsubmit=e=>{e.preventDefault(); busy($('#cBtn'),async()=>{
     const doc=soDig($('#cDoc').value);
     if(doc && !(doc.length===11?cpfValido(doc):doc.length===14?cnpjValido(doc):false)) throw new Error('CPF ou CNPJ inválido. Confira os números.');
     const row={nome:$('#cNome').value.trim(),documento:doc?fmtDoc(doc):null,telefone:$('#cTel').value.trim()||null,
-      email:$('#cEmail').value.trim().toLowerCase(),taxa_percentual:parseValor($('#cTaxa').value),ativo:$('#cAtivo').checked};
+      email:$('#cEmail').value.trim().toLowerCase(),taxa_percentual:parseValor($('#cTaxa').value),ativo:$('#cAtivo').checked, ...lerEndereco('ce', false)};
+    if(row.cep && !c.endereco) row.endereco=`${row.logradouro}, ${row.numero}${row.complemento?' '+row.complemento:''} – ${row.bairro} – ${row.cidade}/${row.uf} – CEP ${fmtCep(row.cep)}`;
     const {error}= id ? await sb.from('prem_clientes').update(row).eq('id',id) : await sb.from('prem_clientes').insert(row);
     if(error) throw new Error(error.code==='23505'?'Já existe um cliente com esse e-mail.':error.message);
     toast('Cliente salvo.'); fecharModal(); recarregar();
