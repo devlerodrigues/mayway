@@ -88,3 +88,7 @@ Depois de publicar, no Supabase → Authentication → URL Configuration:
 
 ## Comprovante por favorecido
 - `prem_ordem_itens.comprovante`: na etapa Pagar favorecidos, cada linha tem "📎 Anexar comprovante". `prem_registrar_pagamentos` exige comprovante de cada favorecido **ou** um PDF único (`prem_ordens.anexo_comprovante_pagamento`, agora opcional). No detalhe da ordem, cada favorecido pago mostra o botão do seu comprovante (cliente também vê).
+
+## Endereço do favorecido (exigido pela NFS-e)
+- O Emissor Nacional exige o grupo "fornecedor" (CPF, nome e endereço) em cada documento de dedução. Colunas novas em `prem_favorecidos`: cep, logradouro, numero, complemento, bairro, cidade, uf (obrigatórias no formulário; CEP preenche rua/bairro/cidade via ViaCEP). `prem_criar_ordem` copia o endereço para `prem_ordem_itens.endereco` (jsonb); `prem_atualizar_endereco_itens(favorecido)` atualiza itens de ordens não concluídas quando o endereço é completado. Lista de favorecidos mostra "sem endereço"; na etapa Emitir NFS-e cada favorecido sem endereço tem o botão "⚠ Completar endereço".
+- NFS-e no Emissor Nacional (BH, Simples): 17.06.01 / complementar 17.06.01.001, NBS 114061900, dedução por Documentos → Outros Documentos → Outras deduções, um por favorecido (data do PIX, valor), com fornecedor identificado; valor aproximado dos tributos = alíquota do Simples (6% nas notas atuais).

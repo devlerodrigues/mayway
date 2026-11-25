@@ -642,7 +642,8 @@ async function detalhe(id){
         <table class="tbl nfse-tab"><tbody id="nfValores"></tbody></table>
         <label style="margin-top:10px">Deduções – documentos (um por favorecido)</label>
         <div class="tblwrap"><table class="tbl"><thead><tr><th>Tipo</th><th>CPF</th><th>Nome</th><th>Data</th><th class="num">Valor</th></tr></thead><tbody>
-        ${its.map(i=>`<tr><td class="small">99 – Outras deduções (repasse)</td><td>${esc(fmtDoc(i.cpf))}</td><td>${esc(i.nome)}</td><td>${dIso(i.pago_em)}</td><td class="num">${brl(i.valor)}</td></tr>`).join('')}
+        ${its.map(i=>`<tr><td class="small">99 – Outras deduções (repasse)</td><td>${esc(fmtDoc(i.cpf))}</td><td>${esc(i.nome)}
+          <div class="small muted">${i.endereco?esc(`${i.endereco.logradouro}, ${i.endereco.numero}${i.endereco.complemento?' '+i.endereco.complemento:''} – ${i.endereco.bairro} – ${i.endereco.cidade}/${i.endereco.uf} – CEP ${String(i.endereco.cep).replace(/^(\d{5})(\d{3})$/,'$1-$2')}`):`<button type="button" class="btn sm" data-endfav="${i.favorecido_id}">⚠ Completar endereço</button>`}</div></td><td>${dIso(i.pago_em)}</td><td class="num">${brl(i.valor)}</td></tr>`).join('')}
         ${Number(o.custo_transferencia)?`<tr><td class="small">99 – Outras deduções (tarifa TED)</td><td>—</td><td>Custo de transferência</td><td>—</td><td class="num">${brl(o.custo_transferencia)}</td></tr>`:''}
         </tbody></table></div>
         <label style="margin-top:10px">Discriminação dos serviços</label><textarea id="nfTexto" readonly style="min-height:260px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
@@ -720,6 +721,7 @@ async function detalhe(id){
       const {error}=await sb.rpc('prem_registrar_pagamentos',{p_ordem:o.id,p_anexo:path,p_itens:linhas});
       if(error) throw error; toast('Pagamentos registrados. Agora emita a NFS-e.'); fecharModal(); recarregar(); });
   }
+  document.querySelectorAll('[data-endfav]').forEach(b=>b.onclick=()=>formFav(b.dataset.endfav, o.cliente_id, ()=>detalhe(o.id)));
   if(admin && o.status==='favorecidos_pagos'){
     const rep_=Number(o.valor_pagamento), tx=Number(o.valor_taxa), ted=Number(o.custo_transferencia||0);
     $('#nfValores').innerHTML=[['Valor total do serviço',rep_+tx+ted],['Deduções (repasses + TED)',rep_+ted],['Base de cálculo do ISS (taxa)',tx]].map(([l,v])=>`<tr><td>${l}</td><td class="num"><b>${brl(v)}</b></td></tr>`).join('');
@@ -875,7 +877,7 @@ function vFavorecidos(){
       <button class="btn pri" id="fvNovo">+ Novo favorecido</button></div>
     <p class="muted" style="margin-top:-6px">Preferência: <b>PIX</b> (sem custo). Pagamentos por <b>TED</b> têm custo de ${brl(S.custoTed)} por favorecido, somado à nota.</p>
     <div class="card">${lista.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Nome</th>${admin&&!cli?'<th>Cliente</th>':''}<th>CPF</th><th>Forma</th><th>Dados de pagamento</th><th></th></tr></thead><tbody>
-      ${lista.map(f=>`<tr><td><b>${esc(f.nome)}</b></td>${admin&&!cli?`<td>${esc(nomeCli(f.cliente_id))}</td>`:''}<td>${esc(fmtDoc(f.cpf))}</td>
+      ${lista.map(f=>`<tr><td><b>${esc(f.nome)}</b>${f.cep?'':' <span class="pill st-cancelada" title="Necessário para a nota fiscal">sem endereço</span>'}</td>${admin&&!cli?`<td>${esc(nomeCli(f.cliente_id))}</td>`:''}<td>${esc(fmtDoc(f.cpf))}</td>
         <td>${f.forma_pagamento==='pix'?'<span class="pill st-concluida">PIX</span>':'<span class="pill st-enviada">TED +'+brl(S.custoTed)+'</span>'}</td>
         <td class="small">${esc(favDados(f).replace(/^(PIX|TED) · /,''))}</td>
         <td class="num"><button class="btn sm" data-ed="${f.id}">Editar</button> <button class="btn sm danger" data-del="${f.id}">Remover</button></td></tr>`).join('')}
@@ -903,6 +905,14 @@ function formFav(id, clienteId, onSaved){
         <div class="f"><label>Tipo de conta</label><select id="fvTipoConta"><option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select></div></div>
         <div class="row"><div class="f"><label>Agência</label><input id="fvAg" value="${esc(f.agencia||'')}"></div>
         <div class="f"><label>Conta com dígito</label><input id="fvConta" value="${esc(f.conta||'')}"></div></div></div>
+      <div style="margin:6px 0 4px"><b>Endereço</b> <span class="muted small">(exigido na nota fiscal)</span></div>
+      <div class="row"><div class="f" style="max-width:170px"><label>CEP</label><input id="fvCep" required inputmode="numeric" placeholder="00000-000" value="${esc(f.cep?f.cep.replace(/^(\d{5})(\d{3})$/,'$1-$2'):'')}"></div>
+        <div class="f"><label>Rua / avenida</label><input id="fvLog" required value="${esc(f.logradouro||'')}"></div></div>
+      <div class="row"><div class="f" style="max-width:120px"><label>Número</label><input id="fvNum" required value="${esc(f.numero||'')}"></div>
+        <div class="f"><label>Complemento</label><input id="fvComp" value="${esc(f.complemento||'')}"></div>
+        <div class="f"><label>Bairro</label><input id="fvBairro" required value="${esc(f.bairro||'')}"></div></div>
+      <div class="row"><div class="f"><label>Cidade</label><input id="fvCid" required value="${esc(f.cidade||'')}"></div>
+        <div class="f" style="max-width:90px"><label>UF</label><input id="fvUf" required maxlength="2" value="${esc(f.uf||'')}"></div></div>
       <div id="fvMsg"></div>
       <button class="btn pri" id="fvBtn">Salvar</button>
     </form>`);
@@ -910,11 +920,17 @@ function formFav(id, clienteId, onSaved){
   const alterna=()=>{ const pix=$('#fvForma').value==='pix'; $('#fvPix').classList.toggle('hidden',!pix); $('#fvTed').classList.toggle('hidden',pix); };
   $('#fvForma').onchange=alterna; alterna();
   $('#fvPixTipo').onchange=()=>{ if($('#fvPixTipo').value==='cpf' && !$('#fvPixChave').value) $('#fvPixChave').value=soDig($('#fvCpf').value); };
+  $('#fvCep').onblur=async()=>{ const c=soDig($('#fvCep').value); if(c.length!==8) return; $('#fvCep').value=c.replace(/^(\d{5})(\d{3})$/,'$1-$2');
+    try{ const r=await fetch(`https://viacep.com.br/ws/${c}/json/`).then(r=>r.json()); if(r.erro) return toast('CEP não encontrado. Preencha o endereço manualmente.',true);
+      if(r.logradouro) $('#fvLog').value=r.logradouro; if(r.bairro) $('#fvBairro').value=r.bairro; $('#fvCid').value=r.localidade||''; $('#fvUf').value=r.uf||''; $('#fvNum').focus(); }catch(_){} };
   $('#fvForm').onsubmit=e=>{ e.preventDefault(); busy($('#fvBtn'),async()=>{
     const cpf=soDig($('#fvCpf').value);
     if(!(cpfValido(cpf)||cnpjValido(cpf))) throw new Error('CPF inválido. Confira os números.');
     const forma=$('#fvForma').value;
-    const row={ nome:$('#fvNome').value.trim(), cpf, forma_pagamento:forma };
+    const cep=soDig($('#fvCep').value); if(cep.length!==8) throw new Error('Informe o CEP com 8 números.');
+    const row={ nome:$('#fvNome').value.trim(), cpf, forma_pagamento:forma, cep, logradouro:$('#fvLog').value.trim(), numero:$('#fvNum').value.trim(),
+      complemento:$('#fvComp').value.trim()||null, bairro:$('#fvBairro').value.trim(), cidade:$('#fvCid').value.trim(), uf:$('#fvUf').value.trim().toUpperCase() };
+    if(!row.logradouro||!row.numero||!row.bairro||!row.cidade||row.uf.length!==2) throw new Error('Preencha o endereço completo (rua, número, bairro, cidade e UF).');
     if(forma==='pix'){ row.pix_tipo=$('#fvPixTipo').value; row.pix_chave=$('#fvPixChave').value.trim() || (row.pix_tipo==='cpf'?cpf:'');
       if(!row.pix_chave) throw new Error('Informe a chave PIX.'); }
     else { row.banco=$('#fvBanco').value.trim(); row.agencia=$('#fvAg').value.trim(); row.conta=$('#fvConta').value.trim(); row.tipo_conta=$('#fvTipoConta').value;
@@ -923,6 +939,7 @@ function formFav(id, clienteId, onSaved){
     if(id) res = await sb.from('prem_favorecidos').update(row).eq('id',id).select().single();
     else { row.cliente_id=clienteId; res = await sb.from('prem_favorecidos').insert(row).select().single(); }
     if(res.error) throw new Error(res.error.code==='23505'?'Já existe um favorecido com esse CPF.':res.error.message);
+    await sb.rpc('prem_atualizar_endereco_itens',{p_favorecido:res.data.id});
     fecharModal(); toast('Favorecido salvo.'); await carregar(); onSaved && onSaved(res.data);
   });};
 }
