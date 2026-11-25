@@ -77,24 +77,28 @@ async function carregarCertificado(adm: ReturnType<typeof createClient>): Promis
 }
 
 // A Sefin pede o certificado por renegociação TLS 1.2, que o servidor de funções do Supabase não suporta.
-// O envio passa pela ponte própria (pasta ponte-nfse do repositório), que não guarda nada:
-// recebe o certificado a cada chamada, fala com a Receita e devolve a resposta.
+// O envio passa pelo programa da ponte, rodando no PC da Mayway (pasta ponte-pc do repositório):
+// o pedido entra na fila prem_ponte_req, o PC pega (o certificado sai da tabela na hora),
+// fala com a Receita pelo Windows e devolve a resposta.
+const pcLigado = (visto: string | null) => !!visto && Date.now() - new Date(visto).getTime() < 60_000;
 // deno-lint-ignore no-explicit-any
-async function chamar(_adm: any, cert: Cert, url: string, init: { method: string; body?: string }) {
-  const ponte = (Deno.env.get('NFSE_PONTE_URL') || '').replace(/\/+$/, '');
-  const token = Deno.env.get('NFSE_PONTE_TOKEN') || '';
-  if (!ponte || !token) throw new Error('A ponte da NFS-e ainda não está configurada.');
-  const r = await fetch(`${ponte}/mtls`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-ponte-token': token },
-    body: JSON.stringify({ pfx: cert.pfxB64, senha: cert.senha, metodo: init.method, url, corpo: init.body ?? null }),
-    signal: AbortSignal.timeout(120_000),
-  });
-  const p = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error('Ponte: ' + (p.erro || `HTTP ${r.status}`));
-  // deno-lint-ignore no-explicit-any
-  let corpo: any = null; try { corpo = JSON.parse(p.corpo); } catch (_) { corpo = { texto: String(p.corpo || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000) }; }
-  return { status: Number(p.status), corpo };
+async function chamar(adm: any, cert: Cert, url: string, init: { method: string; body?: string }) {
+  const { data: req, error } = await adm.from('prem_ponte_req')
+    .insert({ metodo: init.method, url, corpo: init.body ?? null, pfx: cert.pfxB64, senha: cert.senha }).select('id').single();
+  if (error || !req) throw new Error('Não consegui criar o pedido para a ponte: ' + (error?.message || ''));
+  const limite = Date.now() + 100_000;
+  while (Date.now() < limite) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const { data: r } = await adm.from('prem_ponte_req').select('status, resp_status, resp_corpo, erro').eq('id', req.id).single();
+    if (r?.status === 'ok') {
+      // deno-lint-ignore no-explicit-any
+      let corpo: any = null; try { corpo = JSON.parse(r.resp_corpo); } catch (_) { corpo = { texto: String(r.resp_corpo || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000) }; }
+      return { status: Number(r.resp_status), corpo };
+    }
+    if (r?.status === 'erro') throw new Error('Ponte (PC): ' + (r.erro || 'erro'));
+  }
+  await adm.from('prem_ponte_req').update({ status: 'cancelado', pfx: null, senha: null }).eq('id', req.id).eq('status', 'pendente');
+  throw new Error('O programa da ponte no PC não respondeu a tempo.');
 }
 
 function mensagensErro(corpo: any): string {
@@ -121,15 +125,16 @@ Deno.serve(async (req) => {
       const c = await carregarCertificado(adm);
       const info = { titular: c.titular, cnpj: c.cnpj, validade: c.validade, emissor: c.emissor };
       await adm.from('prem_config').update({ nfse_cert_info: info }).not('id', 'is', null);
-      return json({ ok: true, ...info });
+      const { data: cf } = await adm.from('prem_config').select('ponte_visto_em').single();
+      return json({ ok: true, ...info, ponte_ligada: pcLigado(cf?.ponte_visto_em ?? null) });
     }
     if (body.acao !== 'emitir' || !body.ordem_id) return json({ error: 'Ação inválida' }, 400);
-    if (!Deno.env.get('NFSE_PONTE_URL') || !Deno.env.get('NFSE_PONTE_TOKEN')) return json({ error: 'A ponte da NFS-e ainda não está configurada. Use a emissão manual pelo portal por enquanto.' }, 400);
 
     // ---------- dados ----------
     const { data: cfg, error: eCfg } = await adm.from('prem_config').select('*').single();
     if (!cfg) throw new Error('Não consegui ler a configuração: ' + (eCfg?.message || 'vazia'));
     const ambiente = (Number(body.ambiente) || cfg.nfse_ambiente || 2) as 1 | 2;
+    if (!pcLigado(cfg.ponte_visto_em)) return json({ error: 'O programa da ponte da NFS-e não está rodando no PC. Ligue o PC (ele abre sozinho com o Windows) e tente de novo em 1 minuto.' }, 400);
     const { data: o } = await adm.from('prem_ordens').select('*, prem_clientes(*), prem_campanhas(nome)').eq('id', body.ordem_id).single();
     if (!o) return json({ error: 'Ordem não encontrada' }, 404);
     if (o.status !== 'favorecidos_pagos') return json({ error: 'A ordem precisa estar na etapa "Emitir NFS-e" (favorecidos pagos).' }, 400);
@@ -172,7 +177,7 @@ Deno.serve(async (req) => {
     const prestCnpj = dig(cfg.contratada_cnpj || '') || cert.cnpj || '';
 
     // ---------- recuperar envio anterior com resultado desconhecido ----------
-    for (const n of (ja || []).filter((n: any) => n.status === 'erro' && !n.chave)) {
+    for (const n of (ja || []).filter((n: any) => n.status === 'erro' && !n.chave && Date.now() - new Date(n.created_at).getTime() < 86_400_000).slice(0, 2)) {
       const r = await chamar(adm, cert, `${SEFIN[ambiente]}/dps/${n.id_dps}`, { method: 'GET' }).catch(() => null);
       const chave = r && r.status === 200 ? (r.corpo?.chaveAcesso || r.corpo?.ChaveAcesso) : null;
       if (chave) {
@@ -204,7 +209,7 @@ Deno.serve(async (req) => {
       r = await chamar(adm, cert, `${SEFIN[ambiente]}/nfse`, { method: 'POST', body: JSON.stringify({ dpsXmlGZipB64: await gzipB64(xml) }) });
     } catch (e) {
       await adm.from('prem_nfse').update({ status: 'erro', mensagem: 'Falha de comunicação: ' + String((e as Error).message || e).slice(0, 500) }).eq('id', reg.id);
-      return json({ error: 'Falha de comunicação com a Receita. Tente de novo: o sistema confere antes se a nota chegou a ser gerada.' }, 502);
+      return json({ error: 'Falha de comunicação com a Receita: ' + String((e as Error).message || e).slice(0, 300) + ' Tente de novo: o sistema confere antes se a nota chegou a ser gerada.' }, 502);
     }
     const chave = r.corpo?.chaveAcesso || r.corpo?.ChaveAcesso;
     if ((r.status === 200 || r.status === 201) && chave && r.corpo?.nfseXmlGZipB64) {
