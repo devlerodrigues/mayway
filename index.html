@@ -1725,12 +1725,51 @@ function vClientes(){
       </tbody></table></div>`:`<div class="empty">Cadastre seu primeiro cliente. Ele vai entrar no sistema com o e-mail que você informar aqui.</div>`}</div>`;
   document.querySelectorAll('[data-cli]').forEach(tr=>tr.onclick=()=>formCliente(tr.dataset.cli));
 }
+// Consulta pública de CNPJ (BrasilAPI; se falhar, publica.cnpj.ws)
+const titulo = t => (t||'').toLowerCase().replace(/(^|[\s\/(-])(\p{L})/gu,(m,a,b)=>a+b.toUpperCase()).replace(/\b(De|Da|Do|Das|Dos|E)\b/g,m=>m.toLowerCase()).trim();
+async function consultarCnpj(cnpj){
+  const ok=r=>{ if(!r.ok) throw new Error(r.status===404?'nao_encontrado':'falha'); return r.json(); };
+  try{
+    const d=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj).then(ok);
+    return {razao:d.razao_social, fantasia:d.nome_fantasia, situacao:d.descricao_situacao_cadastral, cep:soDig(d.cep||''),
+      logradouro:[d.descricao_tipo_de_logradouro, d.logradouro].filter(Boolean).join(' '), numero:d.numero, complemento:d.complemento, bairro:d.bairro,
+      cidade:d.municipio, uf:d.uf, ibge:d.codigo_municipio_ibge?String(d.codigo_municipio_ibge):'', telefone:d.ddd_telefone_1||'', email:d.email||''};
+  }catch(e){
+    if(e.message==='nao_encontrado') throw new Error('CNPJ não encontrado na Receita.');
+    const d=await fetch('https://publica.cnpj.ws/cnpj/'+cnpj).then(ok).catch(()=>{ throw new Error('Não consegui consultar o CNPJ agora. Tente de novo em 1 minuto ou preencha à mão.'); });
+    const e2=d.estabelecimento||{};
+    return {razao:d.razao_social, fantasia:e2.nome_fantasia, situacao:e2.situacao_cadastral, cep:soDig(e2.cep||''),
+      logradouro:[e2.tipo_logradouro, e2.logradouro].filter(Boolean).join(' '), numero:e2.numero, complemento:e2.complemento, bairro:e2.bairro,
+      cidade:e2.cidade?.nome, uf:e2.estado?.sigla, ibge:e2.cidade?.ibge_id?String(e2.cidade.ibge_id):'', telefone:(e2.ddd1||'')+(e2.telefone1||''), email:e2.email||''};
+  }
+}
+const fmtTel = t => { const d=soDig(t); return d.length===10?d.replace(/(\d{2})(\d{4})(\d{4})/,'($1) $2-$3'):d.length===11?d.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3'):t; };
+async function preencherPorCnpj(p, campos){
+  const cnpj=soDig($(campos.doc).value); if(cnpj.length!==14||!cnpjValido(cnpj)) return;
+  const st=$(campos.status); st.innerHTML='Buscando dados na Receita…';
+  try{
+    const d=await consultarCnpj(cnpj);
+    $(campos.nome).value=d.razao||$(campos.nome).value;
+    if(campos.tel && d.telefone && !$(campos.tel).value.trim()) $(campos.tel).value=fmtTel(d.telefone);
+    if(campos.email && d.email && !$(campos.email).value.trim()) $(campos.email).value=d.email.toLowerCase();
+    if(p && d.cep){
+      $('#'+p+'Cep').value=fmtCep(d.cep); $('#'+p+'Log').value=titulo(d.logradouro); $('#'+p+'Num').value=d.numero||'SN';
+      $('#'+p+'Comp').value=titulo(d.complemento||''); $('#'+p+'Bairro').value=titulo(d.bairro); $('#'+p+'Cid').value=titulo(d.cidade); $('#'+p+'Uf').value=(d.uf||'').toUpperCase();
+      let ibge=soDig(d.ibge); if(ibge.length!==7){ try{ ibge=(await fetch(`https://viacep.com.br/ws/${d.cep}/json/`).then(r=>r.json())).ibge||''; }catch(_){ ibge=''; } }
+      $('#'+p+'Ibge').value=ibge;
+    }
+    const ativa=/ativa/i.test(d.situacao||'');
+    st.innerHTML=`Empresa (CNPJ) · ${d.fantasia?esc(titulo(d.fantasia))+' · ':''}<b style="color:${ativa?'#1a7f37':'#c62828'}">${esc(d.situacao||'situação não informada')}</b> · dados preenchidos pela Receita, confira`;
+    if(!ativa) toast('Atenção: a situação deste CNPJ na Receita é '+(d.situacao||'desconhecida')+'.',true);
+  }catch(e){ st.textContent='Empresa (CNPJ) · '+e.message; }
+}
+
 function formCliente(id){
   const c = S.clientes.find(x=>x.id===id) || {ativo:true, taxa_percentual:0};
   abrirModal(`<h1>${id?'Editar cliente':'Novo cliente'}</h1>
     <form id="cForm">
       <div class="f"><label>Nome (pessoa física) ou razão social (empresa)</label><input id="cNome" required value="${esc(c.nome||'')}"></div>
-      <div class="row"><div class="f"><label>CPF ou CNPJ</label><input id="cDoc" inputmode="numeric" placeholder="000.000.000-00 ou 00.000.000/0000-00" value="${esc(fmtDoc(c.documento||''))}"><div class="small muted" id="cDocTipo" style="margin-top:4px"></div></div>
+      <div class="row"><div class="f"><label>CPF ou CNPJ</label><input id="cDoc" inputmode="numeric" placeholder="000.000.000-00 ou 00.000.000/0000-00" value="${esc(fmtDoc(c.documento||''))}"><div class="small muted" id="cDocTipo" style="margin-top:4px"></div><button type="button" class="btn sm" id="cBuscaCnpj" style="margin-top:6px;display:none">🔎 Puxar dados da Receita</button></div>
       <div class="f"><label>Telefone</label><input id="cTel" value="${esc(c.telefone||'')}"></div></div>
       <div class="row"><div class="f"><label>E-mail de acesso</label><input id="cEmail" type="email" required value="${esc(c.email||'')}"></div>
       <div class="f"><label>Sua taxa sobre cada pagamento (%)</label><input id="cTaxa" required inputmode="decimal" value="${String(c.taxa_percentual).replace('.',',')}"></div></div>
@@ -1744,7 +1783,12 @@ function formCliente(id){
     ${!id?'':`<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"><b>Acesso do cliente</b>
       <p class="small muted" style="margin:6px 0 10px">O cliente entra com o e-mail <b>${esc(c.email)}</b>: pelo <b>Primeiro acesso</b> (ele cria a senha) ou com uma senha definida por vocês.</p>
       <button type="button" class="btn sm" id="cSenha">Definir nova senha</button></div>`}`);
-  const tipoDoc=()=>{ const d=soDig($('#cDoc').value); $('#cDocTipo').textContent = d.length===11?(cpfValido(d)?'Pessoa física (CPF)':'CPF inválido'):d.length===14?(cnpjValido(d)?'Empresa (CNPJ)':'CNPJ inválido'):''; };
+  const camposCnpj={doc:'#cDoc', status:'#cDocTipo', nome:'#cNome', tel:'#cTel', email:'#cEmail'};
+  let ultimoCnpj=soDig(c.documento||'');
+  const tipoDoc=()=>{ const d=soDig($('#cDoc').value), cnpjOk=d.length===14&&cnpjValido(d); $('#cBuscaCnpj').style.display=cnpjOk?'':'none';
+    $('#cDocTipo').textContent = d.length===11?(cpfValido(d)?'Pessoa física (CPF)':'CPF inválido'):d.length===14?(cnpjOk?'Empresa (CNPJ)':'CNPJ inválido'):'';
+    if(cnpjOk && d!==ultimoCnpj){ ultimoCnpj=d; preencherPorCnpj('ce', camposCnpj); } };
+  $('#cBuscaCnpj').onclick=()=>preencherPorCnpj('ce', camposCnpj);
   $('#cSenha') && ($('#cSenha').onclick=()=>definirSenhaAdmin(c.email, c.nome));
   ligarCep('ce');
   $('#cDoc').oninput=tipoDoc; $('#cDoc').onblur=()=>{ const d=soDig($('#cDoc').value); if(d.length===11||d.length===14) $('#cDoc').value=fmtDoc(d); }; tipoDoc();
