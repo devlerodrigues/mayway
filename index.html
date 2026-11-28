@@ -214,6 +214,8 @@ header{padding-top:env(safe-area-inset-top)}
 .install-bar img{width:36px;height:36px;border-radius:9px}
 .install-bar .btn{padding:8px 12px}
 @media(min-width:701px){.install-bar{bottom:20px;left:auto;max-width:420px}}
+.trava.minha{background:#EEF6F1;border:1px solid #CFE0D7;border-radius:10px;padding:10px 12px;margin:14px 0 4px;font-size:14px}
+.trava.outro{border-color:#E8B4B4;background:#FDF3F3}.trava.outro h2{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -681,6 +683,7 @@ async function carregar(){
   S.ordens = o.data||[]; S.clientes = c.data||[]; S.favs = f.data||[]; if(cfg.data){ S.custoTed = Number(cfg.data.custo_ted); S.prazoPos = cfg.data.prazo_pos_campanha_dias; S.durMax = cfg.data.duracao_max_meses; S.avisoRen = cfg.data.aviso_renovacao_dias; } S.camps = cp.data||[];
 }
 async function recarregar(){ await carregar(); ir(S.tab); }
+async function recarregarLista(){ try{ await carregar(); const y=window.scrollY; ir(S.tab); window.scrollTo(0,y); }catch(_){} }
 setInterval(()=>{ if(S.papel && $('#modal').classList.contains('hidden') && !['nova','favorecidos'].includes(S.tab)) recarregar(); }, 60000);
 
 // ================= ADMIN: PAINEL =================
@@ -746,7 +749,7 @@ function tabelaOrdens(lista, admin){
       <td><div>${esc(o.descricao)}</div><div class="muted small">${esc(o.favorecido_nome)}${o.vencimento?' · vence '+dIso(o.vencimento):''}</div></td>
       <td class="num">${brl(o.valor_pagamento)}</td>
       ${admin?`<td class="num">${brl(o.valor_taxa)}<div class="muted small">${pct(o.taxa_percentual)}</div></td>`:''}
-      <td class="num"><b>${brl(o.valor_nota)}</b></td><td>${pill(o.status, !admin)}</td></tr>`).join('')}
+      <td class="num"><b>${brl(o.valor_nota)}</b></td><td>${pill(o.status, !admin)}${admin&&o.em_execucao_por&&['pago_cliente','favorecidos_pagos'].includes(o.status)?`<div class="small" style="margin-top:4px;color:${o.em_execucao_por===S.user?.id?'var(--economia)':'var(--bad)'}">🔒 ${o.em_execucao_por===S.user?.id?'Com você':esc(o.em_execucao_nome||'Outro admin')}</div>`:''}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function ligarLinhas(){ document.querySelectorAll('tr.click').forEach(tr=>tr.onclick=()=>detalhe(tr.dataset.id)); }
@@ -758,6 +761,10 @@ async function detalhe(id){
   const [{ data:hist }, { data:itens }] = await Promise.all([
     sb.from('prem_historico').select('*').eq('ordem_id',id).order('id'),
     sb.from('prem_ordem_itens').select('*').eq('ordem_id',id).order('created_at') ]);
+  // trava: só um admin por vez paga os favorecidos / emite a nota
+  const etapaTrava = admin && ['pago_cliente','favorecidos_pagos'].includes(o.status);
+  if(etapaTrava){ const {data:tv}=await sb.from('prem_ordens').select('em_execucao_por,em_execucao_nome,em_execucao_desde').eq('id',id).single(); Object.assign(o, tv||{}); }
+  const minha = etapaTrava && o.em_execucao_por===S.user.id;
   const temPg = (itens||[]).some(i=>i.pago_em);
   const tabItens = (itens&&itens.length) ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Favorecido</th><th>CPF</th><th>Forma / dados</th><th class="num">Valor</th>${temPg?'<th>Pago em</th>':''}</tr></thead><tbody>
     ${itens.map(i=>`<tr><td><b>${esc(i.nome)}</b></td><td>${esc(fmtDoc(i.cpf))}</td><td class="small">${esc(i.dados_pagamento)}${Number(i.custo_transferencia)?` <span class="muted">(+${brl(i.custo_transferencia)} TED)</span>`:''}</td><td class="num">${brl(i.valor)}</td>${temPg?`<td>${i.pago_em?dIso(i.pago_em):'—'}${i.comprovante?` <button class="btn sm" data-file="${esc(i.comprovante)}">📎 Comprovante</button>`:''}</td>`:''}</tr>`).join('')}
@@ -824,7 +831,20 @@ async function detalhe(id){
       <div class="row"><div class="f"><label>Nº da NFS-e</label><input id="aNum"></div><div class="f"><label>PDF da NFS-e</label><input id="aFile" type="file" accept=".pdf,image/*"></div></div>
       <button class="btn pri" id="aBtn">Enviar NFS-e e concluir</button></details></div>`;
   if(!admin && o.status==='favorecidos_pagos') acao = `<div class="action"><p class="muted" style="margin:0">Todos os favorecidos foram pagos (comprovantes acima). A nota fiscal será emitida em seguida.</p></div>`;
-  const podeCancelar = !['concluida','cancelada','favorecidos_pagos'].includes(o.status) && (admin || o.status==='enviada');
+  if(etapaTrava){
+    const tarefa = o.status==='pago_cliente' ? 'pagar os favorecidos' : 'emitir a nota fiscal';
+    if(minha) acao = `<div class="trava minha">🔒 <b>Você assumiu esta ordem</b> em ${dth(o.em_execucao_desde)}. Os outros administradores não conseguem ${tarefa} enquanto ela estiver com você.
+        <button type="button" class="btn sm" id="tvLiberar" style="margin-left:6px">Liberar (não vou fazer agora)</button></div>` + acao;
+    else if(o.em_execucao_por) acao = `<div class="action trava outro"><h2>🔒 ${esc(o.em_execucao_nome||'Outro administrador')} está cuidando desta ordem</h2>
+        <p style="margin:0 0 10px">Assumiu em ${dth(o.em_execucao_desde)} para ${tarefa}. <b>Não pague nada por aqui</b>, para o mesmo favorecido não receber duas vezes.</p>
+        <details><summary class="small" style="cursor:pointer">${esc(o.em_execucao_nome||'Ele')} não vai terminar? Tomar para mim</summary>
+        <p class="small" style="margin:8px 0">Só faça isso depois de confirmar com ${esc(o.em_execucao_nome||'ele')} o que já foi pago no banco. Fica registrado no histórico.</p>
+        <button type="button" class="btn sm danger" id="tvTomar">Confirmei com ${esc(o.em_execucao_nome||'ele')}: tomar a ordem para mim</button></details></div>`;
+    else acao = `<div class="action trava livre"><h2>${o.status==='pago_cliente'?'Pagar os favorecidos':'Emitir a NFS-e'}</h2>
+        <p style="margin:0 0 10px">Ninguém está cuidando desta ordem. Assuma antes de começar: enquanto ela estiver com você, os outros administradores não conseguem ${tarefa}, e assim nada é pago duas vezes.</p>
+        <button type="button" class="btn pri" id="tvAssumir">✋ Assumir e ${tarefa}</button></div>`;
+  }
+  const podeCancelar = !['concluida','cancelada','favorecidos_pagos'].includes(o.status) && (admin || o.status==='enviada') && !(etapaTrava && o.em_execucao_por && !minha);
   abrirModal(`
     <div class="muted small">Ordem #${o.numero} · ${dth(o.created_at)}</div>
     <h1 style="margin:4px 0 6px">${esc(o.descricao)}</h1>${o.prem_campanhas?`<div class="muted" style="margin-bottom:6px">Campanha: <b>${esc(o.prem_campanhas.nome)}</b></div>`:''}
@@ -878,7 +898,13 @@ async function detalhe(id){
       const {error}=await sb.rpc('prem_cliente_enviar_comprovante',{p_ordem:o.id,p_anexo:path});
       if(error) throw error; toast('Comprovante enviado.'); fecharModal(); recarregar(); });
   }
-  if(admin && o.status==='pago_cliente'){
+  const assumir=(forcar,b)=>busy(b,async()=>{ const {data:r,error}=await sb.rpc('prem_ordem_assumir',{p_ordem:o.id,p_forcar:!!forcar}); if(error) throw error;
+    if(!r.ok) toast(`${r.nome} assumiu esta ordem agora há pouco. Deixe com ele.`,true); else toast('Ordem assumida. Ela está com você.');
+    detalhe(o.id); recarregarLista(); });
+  $('#tvAssumir') && ($('#tvAssumir').onclick=()=>assumir(false,$('#tvAssumir')));
+  $('#tvTomar') && ($('#tvTomar').onclick=()=>assumir(true,$('#tvTomar')));
+  $('#tvLiberar') && ($('#tvLiberar').onclick=()=>busy($('#tvLiberar'),async()=>{ const {error}=await sb.rpc('prem_ordem_liberar',{p_ordem:o.id}); if(error) throw error; toast('Ordem liberada para os outros administradores.'); detalhe(o.id); recarregarLista(); }));
+  if(admin && o.status==='pago_cliente' && minha){
     $('#pDescCp').onclick=()=>copiar($('#pDesc').value,'Descrição copiada. Cole no campo "mensagem/descrição" do PIX.');
     document.querySelectorAll('tr[data-item] .pComp').forEach(inp=>inp.onchange=()=>{ const tr=inp.closest('tr'), f=inp.files[0];
       tr.querySelector('.pCompNome').textContent = f ? '✓ '+f.name : ''; tr.querySelector('.pCompBtn').firstChild.textContent = f ? '📎 Trocar comprovante' : '📎 Anexar comprovante'; });
@@ -895,8 +921,8 @@ async function detalhe(id){
       if(error) throw error; toast('Pagamentos registrados. Agora emita a NFS-e.'); fecharModal(); recarregar(); });
   }
   document.querySelectorAll('[data-endfav]').forEach(b=>b.onclick=()=>formFav(b.dataset.endfav, o.cliente_id, ()=>detalhe(o.id)));
-  if(admin && o.status==='favorecidos_pagos') montarNfseAuto(o);
-  if(admin && o.status==='favorecidos_pagos'){
+  if(admin && o.status==='favorecidos_pagos' && minha) montarNfseAuto(o);
+  if(admin && o.status==='favorecidos_pagos' && minha){
     const rep_=Number(o.valor_pagamento), tx=Number(o.valor_taxa), ted=Number(o.custo_transferencia||0);
     $('#nfValores').innerHTML=[['Valor total do serviço',rep_+tx+ted],['Deduções (repasses + TED)',rep_+ted],['Base de cálculo do ISS (taxa)',tx]].map(([l,v])=>`<tr><td>${l}</td><td class="num"><b>${brl(v)}</b></td></tr>`).join('');
     $('#nfTexto').value=textoNfse(o, its, cliNome, cfg);
@@ -1604,6 +1630,7 @@ const MANUAL_ADMIN = [
  ['Aprovar campanhas', ['Menu <b>Campanhas</b> abre nas que estão <b>Em análise</b>.', 'Abra, leia o briefing e clique em <b>Aprovar</b>, <b>Pedir ajustes</b> (escreva o que mudar) ou <b>Reprovar</b>.', 'Repetições de campanha feitas pelo cliente já nascem aprovadas.', 'Na lista você vê orçamento x valor já pago por campanha.']],
  ['Emitir a nota', ['Menu <b>Ordens</b> (filtro <b>Precisam de mim</b>) → abra a ordem <b>Aguardando nota</b>.', 'Confira os favorecidos e o cálculo: pagamentos + sua taxa + R$ 9,00 por TED.', 'Se precisar, ajuste a taxa só desta ordem.', 'Informe o nº da nota, anexe o PDF e clique em <b>Enviar nota ao cliente</b>.', 'Se o cliente mandar o comprovante por fora, você pode anexar por ele.']],
  ['Pagar os favorecidos', ['Quando o cliente envia o comprovante do PIX, a ordem vira <b>Pagar favorecidos</b>.', 'Abra a ordem: a lista mostra nome, CPF, chave PIX ou dados bancários e o valor de cada favorecido, com botões de copiar. Use a <b>descrição do pagamento</b> pronta em cada PIX/TED.', 'Em cada favorecido, clique em <b>📎 Anexar comprovante</b> e escolha o comprovante dele. Confira a data de pagamento.', 'Se preferir, em vez de um por um, anexe um único PDF com todos os comprovantes.', 'Clique em <b>Registrar pagamentos</b>. O cliente vê o comprovante de cada favorecido na ordem.']],
+ ['Assumir a ordem (evitar pagamento duplicado)', ['Na etapa de <b>pagar os favorecidos</b> e na de <b>emitir a nota</b>, clique em <b>✋ Assumir</b> antes de começar. A partir daí só você consegue registrar os pagamentos ou emitir a nota dessa ordem.', 'Os outros administradores veem <b>🔒 seu nome</b> na lista e na ordem, com o aviso para não pagar.', 'Desistiu? Clique em <b>Liberar</b>. A trava também sai sozinha quando a ordem passa para a próxima etapa.', 'Se quem assumiu não puder terminar, outro admin pode <b>tomar a ordem para si</b>, depois de confirmar com ele o que já foi pago no banco. Tudo fica no histórico da ordem.']],
  ['Indicadores e comissões', ['Menu <b>Indicadores</b> → <b>+ Novo indicador</b>: nome, CPF/CNPJ, chave PIX e a comissão padrão (% do total que o cliente paga).', 'Em <b>Clientes</b> → abra o cliente → escolha o <b>Indicador</b>. Se esse cliente tiver um % diferente, preencha <b>Comissão específica</b>.', 'A comissão nasce sozinha quando o cliente paga uma ordem: total pago (premiações + taxa + TED) × %.', 'Regra dos 3 meses: o indicador só recebe se tiver ativado um <b>cliente novo</b> (primeira ordem paga) nos 3 meses anteriores. Sem isso, a comissão fica como <b>Sem direito</b> e não é paga depois. Ao ativar um cliente novo, volta a receber de toda a carteira.', 'Fechamento: no início do mês, escolha o mês anterior em <b>Fechamento do mês</b>. Clique em <b>Registrar pagamento</b>. <b>Empresa (CNPJ)</b>: informe número e arquivo da nota fiscal dela. <b>Pessoa física (CPF)</b>: basta pagar o valor da comissão no PIX e registrar a data (comprovante opcional).', '<b>Baixar CSV</b> gera a planilha do mês para a contabilidade.']],
  ['Faturamento', ['Menu <b>Faturamento</b>: receita por mês e por cliente, volume repassado e taxa média.', '<b>Baixar CSV do mês</b> gera a planilha para a contabilidade.']],
  ['Contrato', ['Menu <b>Contrato</b>: preencha os dados da sua empresa (razão social, CNPJ, endereço, representante, foro).', 'Ligue <b>Exigir assinatura</b>: a partir daí o cliente só usa o sistema depois de assinar.', 'A lista mostra quem já assinou; clique em <b>Ver</b> para o contrato assinado, com data, CPF e hash.']],
